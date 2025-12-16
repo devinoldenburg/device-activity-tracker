@@ -1,11 +1,17 @@
 import '@whiskeysockets/baileys';
 import { WASocket, proto, jidNormalizedUser } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
+import { performance } from 'node:perf_hooks';
+import { PingEvent } from './ping-events.js';
 
 // Suppress Baileys debug output (Closing session spam)
 const logger = pino({
     level: process.argv.includes('--debug') ? 'debug' : 'silent'
 });
+
+const PROBE_DELAY_BASE_MS = 400;          // Shorter base delay for higher sampling frequency
+const PROBE_DELAY_JITTER_MS = 400;        // Jitter to avoid bursty probes
+const PROBE_TIMEOUT_MS = 7000;            // Faster offline detection while avoiding false positives
 
 /**
  * Probe method types
@@ -104,6 +110,7 @@ export class WhatsAppTracker {
     private probeTimeouts: Map<string, NodeJS.Timeout> = new Map();
     private lastPresence: string | null = null;
     private probeMethod: ProbeMethod = 'delete'; // Default to delete method
+    public onPing?: (data: PingEvent) => void;
     public onUpdate?: (data: any) => void;
 
     constructor(sock: WASocket, targetJid: string, debugMode: boolean = false) {
@@ -111,6 +118,10 @@ export class WhatsAppTracker {
         this.targetJid = targetJid;
         this.trackedJids.add(targetJid);
         trackerLogger.setDebugMode(debugMode);
+    }
+
+    public getTargetJid(): string {
+        return this.targetJid;
     }
 
     public setProbeMethod(method: ProbeMethod) {
@@ -197,7 +208,7 @@ export class WhatsAppTracker {
             } catch (err) {
                 logger.error(err, 'Error sending probe');
             }
-            const delay = Math.floor(Math.random() * 100) + 2000;
+            const delay = PROBE_DELAY_BASE_MS + Math.floor(Math.random() * PROBE_DELAY_JITTER_MS);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -233,7 +244,7 @@ export class WhatsAppTracker {
             trackerLogger.debug(
                 `[PROBE-DELETE] Sending silent delete probe for fake message ${randomMsgId}`
             );
-            const startTime = Date.now();
+            const startTime = performance.now();
             
             const result = await this.sock.sendMessage(this.targetJid, randomDeleteMessage);
 
@@ -241,10 +252,10 @@ export class WhatsAppTracker {
                 trackerLogger.debug(`[PROBE-DELETE] Delete probe sent successfully, message ID: ${result.key.id}`);
                 this.probeStartTimes.set(result.key.id, startTime);
 
-                // Set timeout: if no CLIENT ACK within 10 seconds, mark device as OFFLINE
+                // Timeout sooner to surface offline state quicker
                 const timeoutId = setTimeout(() => {
                     if (this.probeStartTimes.has(result.key.id!)) {
-                        const elapsedTime = Date.now() - startTime;
+                        const elapsedTime = performance.now() - startTime;
                         trackerLogger.debug(`[PROBE-DELETE TIMEOUT] No CLIENT ACK for ${result.key.id} after ${elapsedTime}ms - Device is OFFLINE`);
                         this.probeStartTimes.delete(result.key.id!);
                         this.probeTimeouts.delete(result.key.id!);
@@ -254,7 +265,7 @@ export class WhatsAppTracker {
                             this.markDeviceOffline(result.key.remoteJid, elapsedTime);
                         }
                     }
-                }, 10000); // 10 seconds timeout
+                }, PROBE_TIMEOUT_MS);
 
                 this.probeTimeouts.set(result.key.id, timeoutId);
             } else {
@@ -294,16 +305,16 @@ export class WhatsAppTracker {
 
             trackerLogger.debug(`[PROBE-REACTION] Sending probe with reaction "${randomReaction}" to non-existent message ${randomMsgId}`);
             const result = await this.sock.sendMessage(this.targetJid, reactionMessage);
-            const startTime = Date.now();
+            const startTime = performance.now();
 
             if (result?.key?.id) {
                 trackerLogger.debug(`[PROBE-REACTION] Probe sent successfully, message ID: ${result.key.id}`);
                 this.probeStartTimes.set(result.key.id, startTime);
 
-                // Set timeout: if no CLIENT ACK within 10 seconds, mark device as OFFLINE
+                // Timeout sooner to surface offline state quicker
                 const timeoutId = setTimeout(() => {
                     if (this.probeStartTimes.has(result.key.id!)) {
-                        const elapsedTime = Date.now() - startTime;
+                        const elapsedTime = performance.now() - startTime;
                         trackerLogger.debug(`[PROBE-REACTION TIMEOUT] No CLIENT ACK for ${result.key.id} after ${elapsedTime}ms - Device is OFFLINE`);
                         this.probeStartTimes.delete(result.key.id!);
                         this.probeTimeouts.delete(result.key.id!);
@@ -313,7 +324,7 @@ export class WhatsAppTracker {
                             this.markDeviceOffline(result.key.remoteJid, elapsedTime);
                         }
                     }
-                }, 10000); // 10 seconds timeout
+                }, PROBE_TIMEOUT_MS);
 
                 this.probeTimeouts.set(result.key.id, timeoutId);
             } else {
@@ -372,7 +383,7 @@ export class WhatsAppTracker {
         const startTime = this.probeStartTimes.get(msgId);
 
         if (startTime) {
-            const rtt = Date.now() - startTime;
+            const rtt = performance.now() - startTime;
             trackerLogger.debug(`[TRACKING] ✅ ${type.toUpperCase()} received for ${msgId} from ${fromJid}, RTT: ${rtt}ms`);
 
             // Clear timeout
@@ -442,6 +453,8 @@ export class WhatsAppTracker {
         }
 
         trackerLogger.info(`\n🔴 Device ${jid} marked as OFFLINE (no CLIENT ACK after ${timeout}ms)\n`);
+        const stats = this.buildDeviceStats(jid);
+        this.emitPingEvent(jid, stats);
         this.sendUpdate();
     }
 
@@ -492,6 +505,8 @@ export class WhatsAppTracker {
         }
         // If rtt > 5000ms, it means timeout - device is already marked as OFFLINE by markDeviceOffline()
 
+        const stats = this.determineDeviceState(jid);
+        this.emitPingEvent(jid, stats);
         this.sendUpdate();
     }
 
@@ -499,27 +514,26 @@ export class WhatsAppTracker {
      * Determine device state (Online/Standby/Offline) based on RTT analysis
      * @param jid Device JID
      */
-    private determineDeviceState(jid: string) {
+    private determineDeviceState(jid: string): { movingAvg: number; median: number; threshold: number } {
         const metrics = this.deviceMetrics.get(jid);
-        if (!metrics) return;
+        if (!metrics) return { movingAvg: 0, median: 0, threshold: 0 };
+
+        const movingAvg = metrics.recentRtts.length > 0
+            ? metrics.recentRtts.reduce((a: number, b: number) => a + b, 0) / metrics.recentRtts.length
+            : metrics.lastRtt;
 
         // If device is marked as OFFLINE (no CLIENT ACK received), keep that state
         // Only change back to Online/Standby if we receive new measurements
         if (metrics.state === 'OFFLINE') {
             // Check if this is a new measurement (device came back online)
-            if (metrics.lastRtt <= 5000 && metrics.recentRtts.length > 0) {
-                trackerLogger.debug(`[DEVICE ${jid}] Device came back online (RTT: ${metrics.lastRtt}ms)`);
-                // Continue with normal state determination below
-            } else {
+            if (!(metrics.lastRtt <= 5000 && metrics.recentRtts.length > 0)) {
                 trackerLogger.debug(`[DEVICE ${jid}] Maintaining OFFLINE state`);
-                return;
+                return { movingAvg, median: 0, threshold: 0 };
             }
+            trackerLogger.debug(`[DEVICE ${jid}] Device came back online (RTT: ${metrics.lastRtt}ms)`);
         }
 
         // Calculate device's moving average
-        const movingAvg = metrics.recentRtts.reduce((a: number, b: number) => a + b, 0) / metrics.recentRtts.length;
-
-        // Calculate global median and threshold
         let median = 0;
         let threshold = 0;
 
@@ -527,8 +541,6 @@ export class WhatsAppTracker {
             const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
             const mid = Math.floor(sorted.length / 2);
             median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-
-
             threshold = median * 0.9;
 
             if (movingAvg < threshold) {
@@ -540,11 +552,37 @@ export class WhatsAppTracker {
             metrics.state = 'Calibrating...';
         }
 
-        // Normal mode: Formatted output
         trackerLogger.formatDeviceState(jid, metrics.lastRtt, movingAvg, median, threshold, metrics.state);
-
-        // Debug mode: Additional debug information
         trackerLogger.debug(`[DEBUG] RTT History length: ${metrics.rttHistory.length}, Global History: ${this.globalRttHistory.length}`);
+        return { movingAvg, median, threshold };
+    }
+
+    private buildDeviceStats(jid: string): { movingAvg: number; median: number; threshold: number } {
+        const median = this.calculateGlobalMedian();
+        const threshold = median * 0.9;
+        const metrics = this.deviceMetrics.get(jid);
+        const movingAvg = metrics && metrics.recentRtts.length > 0
+            ? metrics.recentRtts.reduce((a: number, b: number) => a + b, 0) / metrics.recentRtts.length
+            : metrics?.lastRtt || 0;
+
+        return { movingAvg, median, threshold };
+    }
+
+    private emitPingEvent(jid: string, stats: { movingAvg: number; median: number; threshold: number }) {
+        if (!this.onPing) return;
+        const metrics = this.deviceMetrics.get(jid);
+        if (!metrics) return;
+
+        this.onPing({
+            contactId: this.targetJid,
+            deviceId: jid,
+            state: metrics.state,
+            rtt: metrics.lastRtt,
+            avg: stats.movingAvg,
+            median: stats.median,
+            threshold: stats.threshold,
+            timestamp: metrics.lastUpdate
+        });
     }
 
     /**

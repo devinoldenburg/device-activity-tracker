@@ -1,0 +1,50 @@
+version: '3.9'
+services:
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-api
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    volumes:
+      - signal-data:/home/.local/share/signal-cli
+    environment:
+      - MODE=json-rpc
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: dat-server
+    restart: unless-stopped
+    depends_on:
+      - signal-api
+    environment:
+      - SIGNAL_API_URL=http://signal-api:8080
+      - SIGNAL_API_PUBLIC_URL=http://localhost:8082
+      - AUTH_DIR=/app/auth_info_baileys
+    volumes:
+      - sqlite-data:/app/data
+      - wa-auth:/app/auth_info_baileys
+    ports:
+      - "3005:3001"
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: dat-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      - PORT=3002
+      - NEXT_PUBLIC_API_BASE=http://localhost:3005
+      - NEXT_PUBLIC_SOCKET_URL=http://localhost:3005
+    ports:
+      - "3002:3002"
+
+volumes:
+  signal-data:
+  sqlite-data:
+  wa-auth:

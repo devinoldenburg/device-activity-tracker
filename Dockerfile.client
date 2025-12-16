@@ -1,0 +1,16 @@
+FROM node:20-alpine
+WORKDIR /app
+
+# Install Next client deps
+COPY client-next/package.json client-next/package-lock.json* ./client-next/
+RUN cd /app/client-next && npm install
+
+# Copy client source
+COPY client-next /app/client-next
+
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3002
+WORKDIR /app/client-next
+EXPOSE 3002
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3002"]

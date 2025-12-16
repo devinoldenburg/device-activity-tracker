@@ -6,6 +6,12 @@
  */
 
 import WebSocket from 'ws';
+import { performance } from 'node:perf_hooks';
+import { PingEvent } from './ping-events.js';
+
+const PROBE_DELAY_BASE_MS = 400;          // Higher sampling frequency for Signal
+const PROBE_DELAY_JITTER_MS = 400;        // Jitter to keep probes irregular
+const PROBE_TIMEOUT_MS = 9000;            // Faster offline detection without being overly aggressive
 
 export type ProbeMethod = 'reaction' | 'message';
 
@@ -71,6 +77,7 @@ export class SignalTracker {
     private ws: WebSocket | null = null;
     private reconnectTimeout: NodeJS.Timeout | null = null;
     public onUpdate?: (data: any) => void;
+    public onPing?: (data: PingEvent) => void;
 
     // Serialized probe tracking (per Codex recommendation)
     // Only ONE probe in flight at a time - correlate by order, not timestamp
@@ -88,6 +95,10 @@ export class SignalTracker {
         this.senderNumber = senderNumber;
         this.targetNumber = targetNumber;
         logger.setDebugMode(debugMode);
+    }
+
+    public getTargetNumber(): string {
+        return this.targetNumber;
     }
 
     public setProbeMethod(method: ProbeMethod) {
@@ -198,7 +209,7 @@ export class SignalTracker {
             // Serialized probe approach: if we have a pending probe, ANY delivery receipt
             // from the target is for that probe (since we only send one at a time)
             if (this.pendingProbeStartTime !== null && sourceNumber === this.targetNumber) {
-                const receiptTime = Date.now();
+                const receiptTime = performance.now();
                 const rtt = receiptTime - this.pendingProbeStartTime;
 
                 logger.info(`Delivery receipt matched! RTT: ${rtt}ms`);
@@ -230,8 +241,8 @@ export class SignalTracker {
             } catch (err) {
                 logger.debug('Error sending probe:', err);
             }
-            // Small delay between probes
-            const delay = Math.floor(Math.random() * 1000) + 1000;
+            // Shorter delay for higher sampling frequency
+            const delay = PROBE_DELAY_BASE_MS + Math.floor(Math.random() * PROBE_DELAY_JITTER_MS);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -246,15 +257,15 @@ export class SignalTracker {
             this.probeResolve = resolve;
 
             // Record probe start time
-            this.pendingProbeStartTime = Date.now();
+            this.pendingProbeStartTime = performance.now();
 
             // Send the probe
             await this.sendProbe();
 
-            // Set timeout - if no receipt within 15s, mark offline and continue
+            // Timeout sooner to surface offline state quicker
             this.pendingProbeTimeout = setTimeout(() => {
                 if (this.pendingProbeStartTime !== null) {
-                    const elapsed = Date.now() - this.pendingProbeStartTime;
+                    const elapsed = performance.now() - this.pendingProbeStartTime;
                     logger.debug(`Probe timeout after ${elapsed}ms`);
                     this.markDeviceOffline(this.targetNumber, elapsed);
                     this.pendingProbeStartTime = null;
@@ -264,7 +275,7 @@ export class SignalTracker {
                         this.probeResolve = null;
                     }
                 }
-            }, 15000);
+            }, PROBE_TIMEOUT_MS);
         });
     }
 
@@ -352,6 +363,8 @@ export class SignalTracker {
         }
 
         logger.info(`Device ${identifier} marked as OFFLINE (no receipt after ${timeout}ms)`);
+        const stats = this.buildDeviceStats(identifier);
+        this.emitPingEvent(identifier, stats);
         this.sendUpdate();
     }
 
@@ -390,18 +403,20 @@ export class SignalTracker {
             this.determineDeviceState(identifier);
         }
 
+        const stats = this.determineDeviceState(identifier);
+        this.emitPingEvent(identifier, stats);
         this.sendUpdate();
     }
 
-    private determineDeviceState(identifier: string) {
+    private determineDeviceState(identifier: string): { movingAvg: number; median: number; threshold: number } {
         const metrics = this.deviceMetrics.get(identifier);
-        if (!metrics) return;
+        if (!metrics) return { movingAvg: 0, median: 0, threshold: 0 };
 
         if (metrics.state === 'OFFLINE') {
             if (metrics.lastRtt <= 5000 && metrics.recentRtts.length > 0) {
                 logger.debug(`Device ${identifier} came back online (RTT: ${metrics.lastRtt}ms)`);
             } else {
-                return;
+                return { movingAvg: metrics.lastRtt, median: 0, threshold: 0 };
             }
         }
 
@@ -427,6 +442,35 @@ export class SignalTracker {
 
         const stateColor = metrics.state === 'Online' ? '🟢' : metrics.state === 'Standby' ? '🟡' : '⚪';
         logger.info(`${stateColor} ${identifier}: ${metrics.state} (RTT: ${metrics.lastRtt}ms, Avg: ${movingAvg.toFixed(0)}ms)`);
+        return { movingAvg, median, threshold };
+    }
+
+    private buildDeviceStats(identifier: string): { movingAvg: number; median: number; threshold: number } {
+        const median = this.calculateGlobalMedian();
+        const threshold = median * 0.9;
+        const metrics = this.deviceMetrics.get(identifier);
+        const movingAvg = metrics && metrics.recentRtts.length > 0
+            ? metrics.recentRtts.reduce((a, b) => a + b, 0) / metrics.recentRtts.length
+            : metrics?.lastRtt || 0;
+
+        return { movingAvg, median, threshold };
+    }
+
+    private emitPingEvent(identifier: string, stats: { movingAvg: number; median: number; threshold: number }) {
+        if (!this.onPing) return;
+        const metrics = this.deviceMetrics.get(identifier);
+        if (!metrics) return;
+
+        this.onPing({
+            contactId: this.targetNumber,
+            deviceId: identifier,
+            state: metrics.state,
+            rtt: metrics.lastRtt,
+            avg: stats.movingAvg,
+            median: stats.median,
+            threshold: stats.threshold,
+            timestamp: metrics.lastUpdate
+        });
     }
 
     private sendUpdate() {

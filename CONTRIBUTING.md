@@ -1,16 +1,22 @@
-# Contributing to Device Activity Tracker
+## Contributing
 
-Thanks for your interest in this PoC!
+Fork of the WhatsApp Activity Tracker. Copyright (c) 2025 WhatsApp Activity Tracker Contributors.
 
-## How to contribute
-1. Fork and clone the repo
-2. Create a branch: `git checkout -b feature/my-change`
-3. Install deps: `npm install` (and `cd client && npm install && cd ..`)
-4. Make your changes
-5. Open a pull request with a short description and motivation
+Guidelines:
+- Keep PRs small and focused; TypeScript preferred.
+- Do not commit auth/session data, SQLite DBs, or secrets.
+- Research/education only; comply with applicable law and consent requirements.
 
-## Guidelines
-- Keep PRs small and focused
-- Prefer TypeScript and follow existing style
-- Don’t commit auth/session data or secrets
-- Respect the ethical / legal notes in the README (research & education only)
+Setup:
+```bash
+npm install
+cd client-next && npm install && cd ..
+```
+
+Run locally:
+- Backend: `npm run start:backend`
+- Frontend: `cd client-next && npm run dev -- -H 0.0.0.0 -p 3002`
+
+Process:
+- Use feature branches; describe intent + testing in PRs.
+- Respect ethical/legal notes in README.

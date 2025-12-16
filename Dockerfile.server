@@ -1,0 +1,18 @@
+FROM node:20-alpine
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json* ./
+ENV SKIP_CLIENT_INSTALL=1
+RUN npm ci --omit=dev
+
+# Copy source
+COPY src ./src
+
+# Create data directory for SQLite
+RUN mkdir -p /app/data
+
+ENV NODE_ENV=production
+ENV SIGNAL_API_URL=http://signal-api:8080
+EXPOSE 3001
+CMD ["npm", "run", "start:backend"]
