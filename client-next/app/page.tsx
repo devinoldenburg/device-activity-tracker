@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle, History, MessageCircle, Radio } from 'lucide-react';
+import { ArrowRight, BarChart3, CheckCircle, History, MessageCircle, Radio } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { TopBar } from '@/components/TopBar';
 import { StatCard } from '@/components/StatCard';
 import { useTracker } from '@/components/TrackerProvider';
+import { API_BASE } from '@/lib/socket';
 
 export default function HomePage() {
   const {
@@ -13,6 +15,23 @@ export default function HomePage() {
     connected,
     contacts,
   } = useTracker();
+
+  const [totalMetrics, setTotalMetrics] = useState<number | null>(null);
+
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const res = await fetch(`${API_BASE}/api/stats/metrics`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        setTotalMetrics(data.total ?? 0);
+      } catch {
+        /* ignore transient errors */
+      }
+    }
+
+    loadMetrics();
+  }, []);
 
   const tracked = contacts.length;
   const online = contacts.filter(c => c.devices.some(d => (d.state || '').includes('Online'))).length;
@@ -40,11 +59,12 @@ export default function HomePage() {
                 </Link>
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 min-w-[260px] w-full sm:max-w-sm">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 min-w-[260px] w-full sm:max-w-2xl">
               <StatCard title="Tracking" value={`${tracked}`} hint="aktive Kontakte" accent="blue" icon={<History size={18} />} />
               <StatCard title="Online" value={`${online}`} hint="aktuell online" accent="green" icon={<CheckCircle size={18} />} />
               <StatCard title="WhatsApp" value={`${whatsappCount}`} hint="tracked" accent="slate" icon={<MessageCircle size={18} />} />
               <StatCard title="Signal" value={`${signalCount}`} hint="tracked" accent="amber" icon={<Radio size={18} />} />
+              <StatCard title="Metrics" value={totalMetrics === null ? '…' : `${totalMetrics}`} hint="gesamt erfasst" accent="green" icon={<BarChart3 size={18} />} />
             </div>
           </div>
         </section>

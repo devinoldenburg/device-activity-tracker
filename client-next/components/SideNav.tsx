@@ -2,17 +2,22 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, Home, Settings, Users } from 'lucide-react';
+import { Activity, Home, Settings, Users, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from './AuthProvider';
 
 const links = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/users', label: 'Nutzer', icon: Users },
-  { href: '/settings', label: 'Settings', icon: Settings }
+  { href: '/', label: 'Dashboard', icon: Home, adminOnly: false },
+  { href: '/users', label: 'Kontakte', icon: Users, adminOnly: false },
+  { href: '/settings', label: 'Einstellungen', icon: Settings, adminOnly: false },
+  { href: '/account', label: 'Account', icon: Activity, adminOnly: false },
+  { href: '/application', label: 'Application', icon: LayoutDashboard, adminOnly: true }
 ];
 
 export function SideNav() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   return (
     <>
@@ -27,7 +32,7 @@ export function SideNav() {
           </div>
         </div>
         <nav className="p-4 space-y-2">
-          {links.map(({ href, label, icon: Icon }) => {
+          {links.filter(link => !link.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link

@@ -1,8 +1,9 @@
 "use client";
 
-import { Wifi, Zap } from 'lucide-react';
+import { Wifi, Zap, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { ConnectionState } from '@/lib/types';
+import { useAuth } from './AuthProvider';
 
 interface TopBarProps {
   connection: ConnectionState;
@@ -10,6 +11,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ connection, connected }: TopBarProps) {
+  const { logout, user } = useAuth();
   const badge = (label: string, on: boolean, tone: 'green' | 'blue') => (
     <span className={clsx(
       'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border',
@@ -46,9 +48,12 @@ export function TopBar({ connection, connected }: TopBarProps) {
             {connection.signalNumber}
           </span>
         )}
-        <span className="hidden md:inline-flex items-center gap-2 text-xs text-slate-500 px-3 py-1 rounded-lg bg-slate-100 border border-slate-200">
-          <Zap size={14} /> High-frequency probes
-        </span>
+        <button
+          onClick={() => logout()}
+          className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800"
+        >
+          <LogOut size={14} /> {user?.username || 'Logout'}
+        </button>
       </div>
     </header>
   );

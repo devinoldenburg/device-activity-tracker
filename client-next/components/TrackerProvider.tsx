@@ -5,8 +5,8 @@ import { useTrackerData } from '@/hooks/useTrackerData';
 
 const TrackerContext = createContext<ReturnType<typeof useTrackerData> | null>(null);
 
-export function TrackerProvider({ children }: { children: ReactNode }) {
-  const tracker = useTrackerData();
+export function TrackerProvider({ children, enabled }: { children: ReactNode; enabled: boolean }) {
+  const tracker = useTrackerData(enabled);
   return <TrackerContext.Provider value={tracker}>{children}</TrackerContext.Provider>;
 }
 

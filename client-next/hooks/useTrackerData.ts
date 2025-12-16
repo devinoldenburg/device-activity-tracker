@@ -13,7 +13,9 @@ function mergeHistory(existing: TrackerData[], incoming: TrackerData[]): Tracker
 const HISTORY_LIMIT = 2000;
 
 async function fetchHistory(contactKey: string): Promise<TrackerData[]> {
-  const response = await fetch(`${API_BASE}/api/contacts/${encodeURIComponent(contactKey)}/pings?limit=${HISTORY_LIMIT}`);
+  const response = await fetch(`${API_BASE}/api/contacts/${encodeURIComponent(contactKey)}/pings?limit=${HISTORY_LIMIT}`, {
+    credentials: 'include'
+  });
   if (!response.ok) throw new Error('History request failed');
   const rows = await response.json();
   return rows
@@ -28,7 +30,7 @@ async function fetchHistory(contactKey: string): Promise<TrackerData[]> {
     .sort((a: TrackerData, b: TrackerData) => a.timestamp - b.timestamp);
 }
 
-export function useTrackerData() {
+export function useTrackerData(enabled: boolean = true) {
   const socket = useMemo(() => getSocket(), []);
   const [connected, setConnected] = useState(socket.connected);
   const [connectionState, setConnectionState] = useState<ConnectionState>(initialConnectionState);
@@ -120,6 +122,15 @@ export function useTrackerData() {
   }, [historyLoading]);
 
   useEffect(() => {
+    if (!enabled) {
+      socket.disconnect();
+      setConnected(false);
+      setConnectionState(initialConnectionState);
+      setContacts(new Map());
+      setSelectedJid(null);
+      return;
+    }
+
     function onConnect() {
       setConnected(true);
     }
@@ -133,18 +144,22 @@ export function useTrackerData() {
 
     function onWhatsAppConnectionOpen() {
       setConnectionState(prev => ({ ...prev, whatsapp: true, whatsappQr: null }));
+      console.info('[WS] WhatsApp connected');
     }
 
     function onWhatsAppQr(qr: string) {
       setConnectionState(prev => ({ ...prev, whatsappQr: qr }));
+      console.info('[WS] WhatsApp QR received');
     }
 
     function onSignalConnectionOpen(data: { number: string }) {
       setConnectionState(prev => ({ ...prev, signal: true, signalNumber: data.number }));
+      console.info('[WS] Signal connected', data.number);
     }
 
     function onSignalDisconnected() {
       setConnectionState(prev => ({ ...prev, signal: false, signalNumber: null }));
+      console.warn('[WS] Signal disconnected');
     }
 
     function onSignalApiStatus(data: { available: boolean }) {
@@ -153,6 +168,7 @@ export function useTrackerData() {
 
     function onSignalQrImage(url: string) {
       setConnectionState(prev => ({ ...prev, signalQrImage: url }));
+      console.info('[WS] Signal QR URL', url);
     }
 
     function onTrackerUpdate(update: any) {
@@ -245,6 +261,7 @@ export function useTrackerData() {
 
     function onError(data: { message: string }) {
       setError(data.message);
+      console.error('[WS] Error', data);
       setTimeout(() => setError(null), 2500);
     }
 
@@ -315,7 +332,7 @@ export function useTrackerData() {
       socket.off('probe-method', onProbe);
       socket.off('tracked-contacts', onTracked);
     };
-  }, [hydrateContact, socket]);
+  }, [enabled, hydrateContact, proxifyProfilePic, persistAlias, socket]);
 
   useEffect(() => {
     if (!selectedJid && contacts.size > 0) {
@@ -369,6 +386,32 @@ export function useTrackerData() {
     hydrateContact(jid, fallback, platform);
   }, [hydrateContact]);
 
+  const clearLocalPreferences = useCallback(() => {
+    try {
+      localStorage.removeItem('contactAliases');
+      localStorage.removeItem('platformEnabled');
+    } catch {
+      /* ignore */
+    }
+    aliasMapRef.current = {};
+    setPlatformEnabled({ whatsapp: true, signal: true });
+    setContacts(new Map());
+    setSelectedJid(null);
+  }, []);
+
+  const resetUserData = useCallback(async () => {
+    setError(null);
+    const res = await fetch(`${API_BASE}/api/account/reset-data`, { method: 'POST', credentials: 'include' });
+    if (!res.ok) {
+      setError('Reset fehlgeschlagen');
+      setTimeout(() => setError(null), 2500);
+      return false;
+    }
+    setContacts(new Map());
+    setSelectedJid(null);
+    return true;
+  }, []);
+
   const contactList = useMemo(() => Array.from(contacts.values()).sort((a, b) => a.displayNumber.localeCompare(b.displayNumber)), [contacts]);
   const filteredContactList = useMemo(
     () => contactList.filter((c) => platformEnabled[c.platform]),
@@ -401,6 +444,8 @@ export function useTrackerData() {
     addContact,
     removeContact,
     refreshHistory,
+    resetUserData,
+    clearLocalPreferences,
     setAliasFor,
     error,
     historyLoading

@@ -1,5 +1,19 @@
 version: '3.9'
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: dat-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=tracker
+      - MYSQL_DATABASE=tracker
+      - MYSQL_USER=tracker
+      - MYSQL_PASSWORD=tracker
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
   signal-api:
     image: bbernhard/signal-cli-rest-api:latest
     container_name: signal-api
@@ -18,13 +32,20 @@ services:
     container_name: dat-server
     restart: unless-stopped
     depends_on:
+      - mysql
       - signal-api
     environment:
       - SIGNAL_API_URL=http://signal-api:8080
       - SIGNAL_API_PUBLIC_URL=http://localhost:8082
       - AUTH_DIR=/app/auth_info_baileys
+      - COOKIE_SECURE=false
+      - JWT_SECRET=please-change-me-to-a-long-secret-32chars-min
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=tracker
+      - MYSQL_PASSWORD=tracker
+      - MYSQL_DATABASE=tracker
     volumes:
-      - sqlite-data:/app/data
       - wa-auth:/app/auth_info_baileys
     ports:
       - "3005:3001"
@@ -46,5 +67,5 @@ services:
 
 volumes:
   signal-data:
-  sqlite-data:
   wa-auth:
+  mysql-data:

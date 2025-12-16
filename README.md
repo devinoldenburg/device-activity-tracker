@@ -24,6 +24,12 @@ Reset everything (drops DB and auth):
 docker-compose down -v && docker-compose up --build -d
 ```
 
+### Authentication
+- Default user: `admin` / `changeme` (stored in SQLite). Change immediately after first login.
+- Env: `ALLOW_REGISTRATION=true` to enable self-signup; otherwise only existing users can log in.
+- Env: `JWT_SECRET` for signing auth cookies (defaults to a dev secret); set to a strong random string in production.
+- Env: `COOKIE_SECURE=true` to force secure cookies behind HTTPS.
+
 ## Local dev
 ```bash
 npm install

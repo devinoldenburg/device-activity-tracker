@@ -47,7 +47,7 @@ let socketInstance: TrackerSocket | null = null;
 
 export function getSocket(): TrackerSocket {
   if (socketInstance) return socketInstance as TrackerSocket;
-  socketInstance = io(SOCKET_URL, { autoConnect: false, transports: ['websocket'] }) as TrackerSocket;
+  socketInstance = io(SOCKET_URL, { autoConnect: false, transports: ['websocket'], withCredentials: true }) as TrackerSocket;
   return socketInstance;
 }
 
