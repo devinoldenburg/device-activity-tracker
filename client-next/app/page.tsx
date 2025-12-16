@@ -23,15 +23,15 @@ export default function HomePage() {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-white via-slate-50 to-slate-100">
       <TopBar connection={connectionState} connected={connected} />
 
-      <main className="px-8 py-8 space-y-8">
+      <main className="px-4 md:px-8 py-8 space-y-8">
         <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lift">
           <div className="absolute inset-0 bg-gradient-to-br from-sky-400/10 via-emerald-300/10 to-purple-400/10" />
-          <div className="relative p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+          <div className="relative p-6 md:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 md:gap-8">
             <div className="max-w-2xl space-y-3">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Realtime Monitoring</p>
-              <h1 className="text-4xl font-bold text-slate-900 leading-tight">High-Frequency Device Activity, neu gedacht</h1>
-              <p className="text-lg text-slate-600">Schnellere Probes, bessere Timeline, selektive Detailansicht: Nur der Nutzer, den du auswählst, wird geladen und live aktualisiert.</p>
-              <div className="flex items-center gap-3">
+              <h1 className="text-3xl md:text-4xl font-bold text-slate-900 leading-tight">High-Frequency Device Activity, neu gedacht</h1>
+              <p className="text-base md:text-lg text-slate-600">Schnellere Probes, bessere Timeline, selektive Detailansicht: Nur der Nutzer, den du auswählst, wird geladen und live aktualisiert.</p>
+              <div className="flex flex-wrap items-center gap-3">
                 <Link href="/users" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold shadow-lift hover:bg-black">
                   Nutzer öffnen <ArrowRight size={16} />
                 </Link>
@@ -40,7 +40,7 @@ export default function HomePage() {
                 </Link>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4 min-w-[320px]">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 min-w-[260px] w-full sm:max-w-sm">
               <StatCard title="Tracking" value={`${tracked}`} hint="aktive Kontakte" accent="blue" icon={<History size={18} />} />
               <StatCard title="Online" value={`${online}`} hint="aktuell online" accent="green" icon={<CheckCircle size={18} />} />
               <StatCard title="WhatsApp" value={`${whatsappCount}`} hint="tracked" accent="slate" icon={<MessageCircle size={18} />} />
@@ -49,7 +49,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ConnectCard
             title="WhatsApp"
             connected={connectionState.whatsapp}

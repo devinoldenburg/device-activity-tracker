@@ -25,12 +25,12 @@ export function TopBar({ connection, connected }: TopBarProps) {
   );
 
   return (
-    <header className="flex items-center justify-between px-8 py-5 border-b border-slate-200/70 bg-white/70 backdrop-blur-xl">
+    <header className="flex flex-wrap gap-3 md:gap-4 items-center justify-between px-4 md:px-8 py-4 md:py-5 border-b border-slate-200/70 bg-white/70 backdrop-blur-xl">
       <div>
         <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Realtime Control</p>
         <h1 className="text-2xl font-bold text-slate-900">Activity Tracker UI</h1>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3">
         <span className={clsx(
           'inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold border',
           connected

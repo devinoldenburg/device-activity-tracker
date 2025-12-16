@@ -6,7 +6,7 @@ import { StatCard } from '@/components/StatCard';
 import { Shield, Zap } from 'lucide-react';
 
 export default function SettingsPage() {
-  const { connectionState, connected, probeMethod, setProbeMethod } = useTracker();
+  const { connectionState, connected, probeMethod, setProbeMethod, platformEnabled, setPlatformEnabled } = useTracker();
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-white via-slate-50 to-slate-100">
@@ -29,6 +29,26 @@ export default function SettingsPage() {
               className={`px-4 py-2 rounded-xl text-sm font-semibold border ${probeMethod === 'reaction' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}
             >
               Reaction
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white shadow-lift p-6">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Plattformen</p>
+          <h2 className="text-2xl font-bold text-slate-900">WhatsApp und Signal entkoppeln</h2>
+          <p className="text-sm text-slate-600 mb-4">Schalte jede Plattform separat frei. Deaktivierte Plattformen werden nicht hinzugefügt oder angezeigt.</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPlatformEnabled('whatsapp', !platformEnabled.whatsapp)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border ${platformEnabled.whatsapp ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}
+            >
+              WhatsApp {platformEnabled.whatsapp ? 'aktiv' : 'aus'}
+            </button>
+            <button
+              onClick={() => setPlatformEnabled('signal', !platformEnabled.signal)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border ${platformEnabled.signal ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}
+            >
+              Signal {platformEnabled.signal ? 'aktiv' : 'aus'}
             </button>
           </div>
         </div>

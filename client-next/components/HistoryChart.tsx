@@ -11,13 +11,12 @@ interface HistoryChartProps {
 export function HistoryChart({ data }: HistoryChartProps) {
   const [fullscreen, setFullscreen] = useState(false);
 
-  const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
-  const filtered = useMemo(() => data.filter(point => point.timestamp >= twelveHoursAgo), [data, twelveHoursAgo]);
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  const filtered = useMemo(() => data.filter(point => point.timestamp >= oneHourAgo), [data, oneHourAgo]);
 
   const mapWithColors = useCallbackData(filtered);
   const mappedFull = useCallbackData(data);
 
-  const smallWidth = Math.max(1200, mapWithColors.length * 24);
   const fullWidth = Math.max(2400, mappedFull.length * 28);
 
   return (
@@ -25,7 +24,7 @@ export function HistoryChart({ data }: HistoryChartProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">RTT Verlauf</p>
-          <p className="text-sm text-slate-600">Letzte 12h mit Schwelle und Zuständen</p>
+          <p className="text-sm text-slate-600">Letzte Stunde mit Schwelle und Zuständen</p>
         </div>
         <button
           onClick={() => setFullscreen(true)}
@@ -34,23 +33,21 @@ export function HistoryChart({ data }: HistoryChartProps) {
           Vollbild
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <div style={{ width: smallWidth, height: 300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={mapWithColors}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleTimeString()} minTickGap={48} />
-              <YAxis domain={['auto', 'auto']} />
-              <Tooltip labelFormatter={(t: number) => new Date(t).toLocaleString()} />
-              <Line type="monotone" dataKey="avg" stroke="#0ea5e9" strokeWidth={2} dot={false} name="Avg RTT" isAnimationActive={false} />
-              <Line type="step" dataKey="threshold" stroke="#ef4444" strokeDasharray="4 4" dot={false} name="Threshold" isAnimationActive={false} />
-              <Scatter data={mapWithColors} shape={(props: any) => {
-                const color = props?.payload?.stateColor || '#94a3b8';
-                return <circle cx={props.cx} cy={props.cy} r={3} fill={color} />;
-              }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      <div style={{ width: '100%', height: 300 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={mapWithColors}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleTimeString()} minTickGap={48} />
+            <YAxis domain={['auto', 'auto']} />
+            <Tooltip labelFormatter={(t: number) => new Date(t).toLocaleString()} />
+            <Line type="monotone" dataKey="avg" stroke="#0ea5e9" strokeWidth={2} dot={false} name="Avg RTT" isAnimationActive={false} />
+            <Line type="step" dataKey="threshold" stroke="#ef4444" strokeDasharray="4 4" dot={false} name="Threshold" isAnimationActive={false} />
+            <Scatter data={mapWithColors} shape={(props: any) => {
+              const color = props?.payload?.stateColor || '#94a3b8';
+              return <circle cx={props.cx} cy={props.cy} r={3} fill={color} />;
+            }} />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
 
       {fullscreen && (

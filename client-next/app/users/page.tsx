@@ -41,9 +41,9 @@ export default function UsersPage() {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-white via-slate-50 to-slate-100">
       <TopBar connection={connectionState} connected={connected} />
 
-      <main className="px-8 py-6">
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-          <aside className="xl:col-span-1 bg-white rounded-3xl border border-slate-200 p-5 shadow-lift h-[calc(100vh-140px)] flex flex-col">
+      <main className="px-4 md:px-8 py-6">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 md:gap-6">
+          <aside className="xl:col-span-1 bg-white rounded-3xl border border-slate-200 p-4 md:p-5 shadow-lift flex flex-col xl:h-[calc(100vh-140px)]">
             <div className="space-y-3 mb-4">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Kontakt hinzufügen</p>
               <div className="grid grid-cols-2 gap-2">
@@ -80,13 +80,13 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden mt-2">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500 mb-2">Nutzer</p>
               <ContactList contacts={contacts} selectedJid={selectedJid} onSelect={setSelectedJid} />
             </div>
           </aside>
 
-          <section className="xl:col-span-3 h-[calc(100vh-140px)] overflow-y-auto pr-2">
+          <section className="xl:col-span-3 xl:h-[calc(100vh-140px)] overflow-visible xl:overflow-y-auto xl:pr-2 space-y-4">
             {!selectedContact ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-white/80 p-10 text-center text-slate-600">
                 Wähle einen Nutzer links aus, um Details zu sehen.

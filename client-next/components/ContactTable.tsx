@@ -61,8 +61,8 @@ export function ContactTable({ contacts, onSelect, selectedJid }: ContactTablePr
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-lift p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-lift p-4 md:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Alle Kontakte</p>
           <p className="text-sm text-slate-600">Live-Stand, letzte RTT/Avg, sortierbar</p>
@@ -74,7 +74,51 @@ export function ContactTable({ contacts, onSelect, selectedJid }: ContactTablePr
           <ArrowDownUp size={14} /> Sort: {label(sortKey)} {desc ? '↓' : '↑'}
         </button>
       </div>
-      <div className="overflow-x-auto scrollbar-thin">
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-3">
+        {rows.map((row) => (
+          <button
+            key={row.jid}
+            onClick={() => onSelect(row.jid)}
+            className={clsx(
+              'w-full text-left rounded-2xl border p-4 shadow-sm transition',
+              selectedJid === row.jid ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 hover:border-slate-300'
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-base font-semibold leading-tight">{row.contactName || row.displayNumber}</p>
+                <p className={clsx('text-xs', selectedJid === row.jid ? 'text-slate-200' : 'text-slate-500')}>{row.displayNumber}</p>
+                <div className="flex items-center gap-2">
+                  <span className={clsx(
+                    'inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold',
+                    row.platform === 'signal' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'
+                  )}>
+                    {row.platform === 'signal' ? <Radio size={12} /> : <MessageCircle size={12} />}
+                    {row.platform === 'signal' ? 'Signal' : 'WhatsApp'}
+                  </span>
+                  <StatusPill state={row.state} inverted={selectedJid === row.jid} stale={row.stale} />
+                </div>
+              </div>
+              <div className="text-right space-y-1 text-sm">
+                <div className="font-semibold">{row.rtt ? `${Math.round(row.rtt)} ms` : '—'} RTT</div>
+                <div className="text-slate-500 text-xs">Avg {row.avg ? `${Math.round(row.avg)} ms` : '—'}</div>
+                <div className="text-slate-500 text-xs">Thresh {row.last?.threshold ? `${Math.round(row.last.threshold)} ms` : '—'}</div>
+                <div className="text-[11px] text-slate-500 flex items-center gap-1 justify-end">
+                  <Clock size={11} /> {row.updatedAt ? timeAgo(row.updatedAt) : '—'}
+                </div>
+              </div>
+            </div>
+          </button>
+        ))}
+        {rows.length === 0 && (
+          <div className="text-center text-slate-500 text-sm py-6">Keine Daten vorhanden.</div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto scrollbar-thin">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">

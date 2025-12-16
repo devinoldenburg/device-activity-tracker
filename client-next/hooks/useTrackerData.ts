@@ -37,6 +37,22 @@ export function useTrackerData() {
   const [probeMethod, setProbeMethod] = useState<ProbeMethod>('delete');
   const [error, setError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
+  const [platformEnabled, setPlatformEnabled] = useState<{ whatsapp: boolean; signal: boolean }>(() => {
+    if (typeof window === 'undefined') return { whatsapp: true, signal: true };
+    try {
+      const stored = localStorage.getItem('platformEnabled');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          whatsapp: parsed.whatsapp !== false,
+          signal: parsed.signal !== false
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+    return { whatsapp: true, signal: true };
+  });
 
   const initialAliases = useMemo(() => {
     try {
@@ -307,6 +323,17 @@ export function useTrackerData() {
     }
   }, [contacts, selectedJid]);
 
+  useEffect(() => {
+    if (selectedJid) {
+      const contact = contacts.get(selectedJid);
+      if (!contact) return;
+      if (!platformEnabled[contact.platform]) {
+        const next = Array.from(contacts.values()).find((c) => platformEnabled[c.platform]);
+        setSelectedJid(next ? next.jid : null);
+      }
+    }
+  }, [platformEnabled, contacts, selectedJid]);
+
   const setAliasFor = useCallback((jid: string, alias: string) => {
     persistAlias(jid, alias);
     setContacts(prev => {
@@ -319,9 +346,15 @@ export function useTrackerData() {
 
   const addContact = useCallback((number: string, platform: Platform, alias?: string) => {
     const cleanNumber = number.replace(/\D/g, '');
+    const enabled = platformEnabled[platform];
+    if (!enabled) {
+      setError(`${platform === 'whatsapp' ? 'WhatsApp' : 'Signal'} ist deaktiviert`);
+      setTimeout(() => setError(null), 2500);
+      return;
+    }
     if (alias) persistAlias(`${platform}:${cleanNumber}`, alias);
     socket.emit('add-contact', { number: cleanNumber, platform, alias: alias || undefined });
-  }, [socket, persistAlias]);
+  }, [socket, persistAlias, platformEnabled]);
 
   const removeContact = useCallback((jid: string) => {
     socket.emit('remove-contact', jid);
@@ -337,18 +370,34 @@ export function useTrackerData() {
   }, [hydrateContact]);
 
   const contactList = useMemo(() => Array.from(contacts.values()).sort((a, b) => a.displayNumber.localeCompare(b.displayNumber)), [contacts]);
+  const filteredContactList = useMemo(
+    () => contactList.filter((c) => platformEnabled[c.platform]),
+    [contactList, platformEnabled]
+  );
 
   const selectedContact = selectedJid ? contacts.get(selectedJid) || null : null;
 
   return {
     connected,
     connectionState,
-    contacts: contactList,
+    contacts: filteredContactList,
     selectedContact,
     setSelectedJid,
     selectedJid,
     probeMethod,
     setProbeMethod: changeProbeMethod,
+    platformEnabled,
+    setPlatformEnabled: (platform: Platform, enabled: boolean) => {
+      setPlatformEnabled((prev) => {
+        const next = { ...prev, [platform]: enabled } as typeof prev;
+        try {
+          localStorage.setItem('platformEnabled', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
     addContact,
     removeContact,
     refreshHistory,

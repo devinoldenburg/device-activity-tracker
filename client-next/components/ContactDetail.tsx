@@ -51,7 +51,7 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
   }, [contact.data, contact.displayNumber]);
 
   return (
-    <div className="glass-card rounded-3xl p-6 space-y-6">
+    <div className="glass-card rounded-3xl p-4 md:p-6 space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className={clsx(
@@ -66,12 +66,12 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
             <p className="text-sm text-slate-600">{contact.displayNumber}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={aliasDraft}
             onChange={(e) => setAliasDraft(e.target.value)}
             placeholder="Alias setzen"
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white min-w-[180px] flex-1"
           />
           <button
             onClick={() => aliasDraft && onAliasChange(aliasDraft)}
@@ -103,7 +103,7 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="Status" value={status} icon={<Wifi size={16} />} tone={status.includes('Online') && !isStale ? 'green' : isStale ? 'slate' : 'slate'} />
         <Stat label="Letzte RTT" value={last ? `${Math.round(last.rtt)} ms` : '–'} icon={<Gauge size={16} />} />
         <Stat label="Ø letzte 24h" value={avgDay ? `${avgDay} ms` : '–'} icon={<Clock size={16} />} />
@@ -161,12 +161,12 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <MetricBox label="Avg" value={last ? `${last.avg.toFixed(0)} ms` : '–'} />
             <MetricBox label="Median" value={last ? `${last.median.toFixed(0)} ms` : '–'} />
             <MetricBox label="Threshold" value={last ? `${last.threshold.toFixed(0)} ms` : '–'} highlight />
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
             <MetricBox label="Ø letzte 15m" value={avg15m ? `${avg15m} ms` : '–'} />
             <MetricBox label="Jitter" value={jitter ? `${jitter} ms` : '–'} />
             <MetricBox label="Samples" value={`${samples}`} />

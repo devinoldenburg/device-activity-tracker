@@ -9,7 +9,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="de">
       <body className="antialiased text-slate-900">
-        <div className="flex min-h-screen">
+        <div className="flex min-h-screen flex-col md:flex-row">
           <SideNav />
           <div className="flex-1 overflow-hidden">
             <TrackerProvider>
