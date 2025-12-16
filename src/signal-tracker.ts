@@ -9,8 +9,8 @@ import WebSocket from 'ws';
 import { performance } from 'node:perf_hooks';
 import { PingEvent } from './ping-events.js';
 
-const PROBE_DELAY_BASE_MS = 400;          // Higher sampling frequency for Signal
-const PROBE_DELAY_JITTER_MS = 400;        // Jitter to keep probes irregular
+const PROBE_DELAY_BASE_MS = 3000;         // Probe nun nur noch etwa alle 3s
+const PROBE_DELAY_JITTER_MS = 400;        // Minimaler Jitter, aber nie unter 3s
 const PROBE_TIMEOUT_MS = 9000;            // Faster offline detection without being overly aggressive
 
 export type ProbeMethod = 'reaction' | 'message';

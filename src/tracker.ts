@@ -9,8 +9,8 @@ const logger = pino({
     level: process.argv.includes('--debug') ? 'debug' : 'silent'
 });
 
-const PROBE_DELAY_BASE_MS = 400;          // Shorter base delay for higher sampling frequency
-const PROBE_DELAY_JITTER_MS = 400;        // Jitter to avoid bursty probes
+const PROBE_DELAY_BASE_MS = 3000;         // Probe roughly alle 3s statt Sub-Sekunden
+const PROBE_DELAY_JITTER_MS = 400;        // Leichter Jitter, aber nie unter 3s
 const PROBE_TIMEOUT_MS = 7000;            // Faster offline detection while avoiding false positives
 
 /**
