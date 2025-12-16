@@ -1,8 +1,8 @@
 <h1 align="left">WhatsApp / Signal Activity Tracker (Docker + Next UI)</h1>
 
-Fork of the original WhatsApp Activity Tracker. MIT license. Focus: always-on Docker stack, SQLite persistence, high-frequency probes, and a Next.js dashboard.
+Fork of the original WhatsApp Activity Tracker. MIT license. Focus: always-on Docker stack, SQLite persistence, and a Next.js dashboard.
 
-> Research/education only. Use only with consent and lawful purpose.
+> **Security hazard / research-only.** This probes messaging platforms to infer presence. Using it without explicit consent can be illegal and unethical. See [docs/README.md](docs/README.md) and do not run it against accounts you do not own or administer with permission.
 
 ## Features
 - WhatsApp (Baileys) + Signal (signal-cli-rest-api) probing with RTT analysis
@@ -56,8 +56,9 @@ Env for the frontend (host dev):
 - Reset stack: `docker-compose down -v && docker-compose up --build -d`
 
 ## Security / ethics
-- Research/education only; obey law and consent requirements
+- Research/education only; obey law, consent, and platform terms
 - Do not commit auth/session data or SQLite files
+- Read the docs: [docs/security-risks.md](docs/security-risks.md), [docs/legal-ethics.md](docs/legal-ethics.md), [docs/deployment-notes.md](docs/deployment-notes.md)
 
 ## License
 MIT. Copyright (c) 2025 WhatsApp Activity Tracker Contributors.
