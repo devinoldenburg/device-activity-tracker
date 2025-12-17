@@ -257,9 +257,12 @@ app.post('/api/whatsapp/connect', requireAuth, asyncHandler(async (req, res) => 
         session = { sock: null, isConnected: false, currentQr: null, restored: false, authDir: userAuthDir(ctx.userId) };
         whatsappSessions.set(ctx.userId, session);
     }
-    session.blockedOnConflict = false;
+    // Force a clean re-pair: drop auth files, clear conflict block, and start fresh QR
+    resetWhatsAppAuth(ctx.userId, session, true);
+    session.authDir = userAuthDir(ctx.userId);
     session.conflictCount = 0;
     session.lastConflictAt = undefined;
+    session.blockedOnConflict = false;
     session.currentQr = null;
     await ensureWhatsAppSession(ctx.userId);
     res.json({ ok: true });
@@ -497,6 +500,15 @@ function userAuthDir(userId: number) {
     return dir;
 }
 
+function authDirHasFiles(authDir: string): boolean {
+    try {
+        const files = fs.readdirSync(authDir);
+        return Array.isArray(files) && files.length > 0;
+    } catch {
+        return false;
+    }
+}
+
 function resetWhatsAppAuth(userId: number, session: WhatsAppSession, clearConflictBlock = false) {
     try {
         fs.rmSync(session.authDir, { recursive: true, force: true });
@@ -520,9 +532,9 @@ function resetWhatsAppAuth(userId: number, session: WhatsAppSession, clearConfli
 
 async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
     let session = whatsappSessions.get(userId);
+    // Do not auto-connect while the session is blocked due to repeated conflicts/replacements.
     if (session?.blockedOnConflict) {
-        notifySocket?.emit('error', { message: 'WhatsApp-Sitzung blockiert wegen Konflikt. Bitte QR neu scannen.' });
-        notifySocket?.emit('qr', null);
+        notifySocket?.emit('error', { message: 'WhatsApp-Sitzung blockiert. Bitte QR neu scannen.' });
         return;
     }
     if (session?.connectPromise) return session.connectPromise;
@@ -547,9 +559,11 @@ async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
                 const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
                 const payload = (lastDisconnect?.error as Boom)?.output?.payload as any;
                 const messageText = payload?.message?.toString().toLowerCase() || '';
-                const isConflict = messageText.includes('conflict');
-                const isConnectionClosed = messageText.includes('connection closed');
-                const allow = statusCode !== DisconnectReason.loggedOut && !isConflict && !isConnectionClosed;
+                const isConflict = messageText.includes('conflict') || statusCode === DisconnectReason.conflict;
+                const isReplaced = messageText.includes('replaced') || statusCode === DisconnectReason.connectionReplaced;
+                const blocked = session?.blockedOnConflict;
+                // Never auto-reconnect on conflict/replaced, force a fresh pairing.
+                const allow = !blocked && statusCode !== DisconnectReason.loggedOut && !isConflict && !isReplaced;
                 return allow;
             },
         });
@@ -571,36 +585,46 @@ async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
                 const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
                 const payload = (lastDisconnect?.error as Boom)?.output?.payload as any;
                 const messageText = payload?.message?.toString().toLowerCase() || '';
-                const isConflict = messageText.includes('conflict');
+                const isConflict = messageText.includes('conflict') || statusCode === DisconnectReason.conflict;
+                const isReplaced = messageText.includes('replaced') || statusCode === DisconnectReason.connectionReplaced;
                 const isConnectionClosed = messageText.includes('connection closed');
                 const now = Date.now();
                 if (isConflict) {
                     session!.conflictCount = (session!.conflictCount || 0) + 1;
                     session!.lastConflictAt = now;
-                    session!.blockedOnConflict = true;
-                    try { session!.sock?.ws?.close(); } catch { /* ignore */ }
-                    try { session!.sock?.end?.(); } catch { /* ignore */ }
-                    try { session!.sock?.ev?.removeAllListeners(); } catch { /* ignore */ }
-                    session!.sock = null;
                 }
-                const shouldResetAuth = statusCode === DisconnectReason.loggedOut || isConflict || isConnectionClosed;
+
+                // Always hard-close the underlying socket to prevent overlapping connections
+                try { session!.sock?.ws?.close(); } catch { /* ignore */ }
+                try { session!.sock?.end?.(); } catch { /* ignore */ }
+                try { session!.sock?.ev?.removeAllListeners(); } catch { /* ignore */ }
+                session!.sock = null;
+
+                const shouldResetAuth = statusCode === DisconnectReason.loggedOut;
                 if (shouldResetAuth) {
-                    resetWhatsAppAuth(userId, session!, !isConflict);
+                    resetWhatsAppAuth(userId, session!, true);
                     session!.sock = undefined;
                     session!.restored = false;
+                }
+
+                if (isConflict || isReplaced) {
+                    // Another device/session took over. Clear auth, block auto-reconnect, and force a fresh QR.
+                    resetWhatsAppAuth(userId, session!, true);
+                    session!.blockedOnConflict = true;
+                    session!.sock = undefined;
+                    session!.restored = false;
+                    stopPlatformTrackers(userId, 'whatsapp');
+                    io.to(`user:${userId}`).emit('qr', null);
+                    io.to(`user:${userId}`).emit('error', { message: 'WhatsApp-Sitzung wurde ersetzt. Bitte neu koppeln.' });
+                    notifySocket?.emit('qr', null);
+                    notifySocket?.emit('error', { message: 'WhatsApp-Sitzung wurde ersetzt. Bitte neu koppeln.' });
+                    return;
                 }
                 io.to(`user:${userId}`).emit('connection-close');
                 notifySocket?.emit('connection-close');
                 const tooManyConflicts = (session!.conflictCount || 0) >= 3 && session!.lastConflictAt && (now - session!.lastConflictAt) < 2 * 60 * 1000;
 
-                // If conflict occurred, force manual re-pair: emit QR null and do NOT auto-reconnect to avoid flapping
-                if (isConflict) {
-                    notifySocket?.emit('error', { message: 'WhatsApp-Sitzung wurde ersetzt. Bitte QR erneut scannen.' });
-                    io.to(`user:${userId}`).emit('qr', null);
-                    return;
-                }
-
-                const shouldReconnect = !tooManyConflicts && (shouldResetAuth || statusCode !== DisconnectReason.loggedOut);
+                const shouldReconnect = !tooManyConflicts;
                 if (shouldReconnect) {
                     const delayMs = isConnectionClosed ? 5000 : 1000;
                     if (session!.reconnectTimeout) clearTimeout(session!.reconnectTimeout);
@@ -617,7 +641,6 @@ async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
                 session!.currentQr = null;
                 session!.conflictCount = 0;
                 session!.lastConflictAt = undefined;
-                session!.blockedOnConflict = false;
                 io.to(`user:${userId}`).emit('connection-open');
                 notifySocket?.emit('connection-open');
                 if (!session!.restored) {
