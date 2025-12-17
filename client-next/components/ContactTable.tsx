@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { ArrowDownUp, Clock, MessageCircle, Radio } from 'lucide-react';
+import { ArrowDownUp, Clock, MessageCircle } from 'lucide-react';
 import { ContactInfo } from '@/lib/types';
 
 interface ContactTableProps {
@@ -91,12 +91,8 @@ export function ContactTable({ contacts, onSelect, selectedJid }: ContactTablePr
                 <p className="text-base font-semibold leading-tight">{row.contactName || row.displayNumber}</p>
                 <p className={clsx('text-xs', selectedJid === row.jid ? 'text-slate-200' : 'text-slate-500')}>{row.displayNumber}</p>
                 <div className="flex items-center gap-2">
-                  <span className={clsx(
-                    'inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold',
-                    row.platform === 'signal' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'
-                  )}>
-                    {row.platform === 'signal' ? <Radio size={12} /> : <MessageCircle size={12} />}
-                    {row.platform === 'signal' ? 'Signal' : 'WhatsApp'}
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700">
+                    <MessageCircle size={12} /> WhatsApp
                   </span>
                   <StatusPill state={row.state} inverted={selectedJid === row.jid} stale={row.stale} />
                 </div>
@@ -151,12 +147,8 @@ export function ContactTable({ contacts, onSelect, selectedJid }: ContactTablePr
                   </div>
                 </td>
                 <td className="py-2 pr-3">
-                  <span className={clsx(
-                    'inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold',
-                    row.platform === 'signal' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'
-                  )}>
-                    {row.platform === 'signal' ? <Radio size={12} /> : <MessageCircle size={12} />}
-                    {row.platform === 'signal' ? 'Signal' : 'WhatsApp'}
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700">
+                    <MessageCircle size={12} /> WhatsApp
                   </span>
                 </td>
                 <td className="py-2 pr-3">

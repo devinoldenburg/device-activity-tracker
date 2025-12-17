@@ -42,12 +42,6 @@ export function TopBar({ connection, connected }: TopBarProps) {
           <Wifi size={16} /> {connected ? 'Server connected' : 'Disconnected'}
         </span>
         {badge('WhatsApp', connection.whatsapp, 'green')}
-        {badge('Signal', connection.signal, 'blue')}
-        {connection.signalNumber && (
-          <span className="text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-            {connection.signalNumber}
-          </span>
-        )}
         <button
           onClick={() => logout()}
           className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800"

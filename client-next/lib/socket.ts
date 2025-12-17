@@ -36,10 +36,6 @@ export type TrackerSocket = Socket<
     'tracked-contacts': (contacts: { id: string; platform: Platform; number?: string }[]) => void;
     'qr': (qr: string) => void;
     'connection-open': () => void;
-    'signal-connection-open': (payload: { number: string }) => void;
-    'signal-disconnected': () => void;
-    'signal-api-status': (payload: { available: boolean }) => void;
-    'signal-qr-image': (url: string) => void;
   }
 >;
 
@@ -60,9 +56,5 @@ export function resetSocket() {
 
 export const initialConnectionState: ConnectionState = {
   whatsapp: false,
-  signal: false,
-  signalNumber: null,
-  signalApiAvailable: false,
-  signalQrImage: null,
   whatsappQr: null
 };

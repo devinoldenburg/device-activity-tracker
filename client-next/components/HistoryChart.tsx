@@ -11,11 +11,14 @@ interface HistoryChartProps {
 export function HistoryChart({ data }: HistoryChartProps) {
   const [fullscreen, setFullscreen] = useState(false);
 
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  const filtered = useMemo(() => data.filter(point => point.timestamp >= oneHourAgo), [data, oneHourAgo]);
 
-  const mapWithColors = useCallbackData(filtered);
-  const mappedFull = useCallbackData(data);
+  const preview = useMemo(() => data.filter(point => point.timestamp >= tenMinutesAgo), [data, tenMinutesAgo]);
+  const lastHour = useMemo(() => data.filter(point => point.timestamp >= oneHourAgo), [data, oneHourAgo]);
+
+  const mapWithColors = useCallbackData(preview);
+  const mappedFull = useCallbackData(lastHour);
 
   const fullWidth = Math.max(2400, mappedFull.length * 28);
 
@@ -24,7 +27,7 @@ export function HistoryChart({ data }: HistoryChartProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">RTT Verlauf</p>
-          <p className="text-sm text-slate-600">Letzte Stunde mit Schwelle und Zuständen</p>
+          <p className="text-sm text-slate-600">Letzte 10 Minuten (Preview) mit Schwelle und Zuständen</p>
         </div>
         <button
           onClick={() => setFullscreen(true)}
@@ -56,7 +59,7 @@ export function HistoryChart({ data }: HistoryChartProps) {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Vollbild</p>
-                <p className="text-sm text-slate-600">Alle Messpunkte, horizontal scrollen für mehr</p>
+                <p className="text-sm text-slate-600">Letzte Stunde; horizontal scrollen für mehr</p>
               </div>
               <button
                 onClick={() => setFullscreen(false)}

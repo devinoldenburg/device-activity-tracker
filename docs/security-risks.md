@@ -5,7 +5,7 @@ This project intentionally probes messaging platforms to infer device presence v
 ## What makes it hazardous
 - **Unwanted surveillance:** Reveals when a device is active/idle/offline without the owner’s knowledge.
 - **Side-channel exploitation:** Uses timing side channels (RTT and delivery receipts) rather than intended APIs.
-- **Metadata exposure:** Collects and stores timestamps, presence signals, and contact identifiers.
+- **Metadata exposure:** Collects and stores timestamps, presence state, and contact identifiers.
 - **Persistence risk:** Data are written to SQLite and volumes; compromise or mishandling leaks historical activity traces.
 - **Abuse potential:** Could be combined with other data to profile behavior patterns.
 

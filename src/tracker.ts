@@ -94,7 +94,7 @@ interface DeviceMetrics {
  * The tracker sends probe messages and measures Round-Trip Time (RTT) to detect
  * when a user's device is actively in use vs. in standby mode.
  *
- * Works with WhatsApp, Signal, and similar messaging platforms.
+ * Works with WhatsApp and similar messaging platforms.
  *
  * Based on research: "Careless Whisper: Exploiting Silent Delivery Receipts to Monitor Users"
  * by Gegenhuber et al., University of Vienna & SBA Research

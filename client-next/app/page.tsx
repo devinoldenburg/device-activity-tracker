@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BarChart3, CheckCircle, History, MessageCircle, Radio } from 'lucide-react';
+import { ArrowRight, BarChart3, CheckCircle, History, MessageCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { TopBar } from '@/components/TopBar';
 import { StatCard } from '@/components/StatCard';
@@ -35,8 +35,7 @@ export default function HomePage() {
 
   const tracked = contacts.length;
   const online = contacts.filter(c => c.devices.some(d => (d.state || '').includes('Online'))).length;
-  const signalCount = contacts.filter(c => c.platform === 'signal').length;
-  const whatsappCount = tracked - signalCount;
+  const whatsappCount = tracked;
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-white via-slate-50 to-slate-100">
@@ -63,7 +62,6 @@ export default function HomePage() {
               <StatCard title="Tracking" value={`${tracked}`} hint="aktive Kontakte" accent="blue" icon={<History size={18} />} />
               <StatCard title="Online" value={`${online}`} hint="aktuell online" accent="green" icon={<CheckCircle size={18} />} />
               <StatCard title="WhatsApp" value={`${whatsappCount}`} hint="tracked" accent="slate" icon={<MessageCircle size={18} />} />
-              <StatCard title="Signal" value={`${signalCount}`} hint="tracked" accent="amber" icon={<Radio size={18} />} />
               <StatCard title="Metrics" value={totalMetrics === null ? '…' : `${totalMetrics}`} hint="gesamt erfasst" accent="green" icon={<BarChart3 size={18} />} />
             </div>
           </div>
@@ -76,14 +74,6 @@ export default function HomePage() {
             qr={connectionState.whatsappQr}
             accent="emerald"
             description="Öffne WhatsApp > Einstellungen > Verknüpfte Geräte und scanne den Code."
-          />
-          <ConnectCard
-            title="Signal"
-            connected={connectionState.signal}
-            qr={connectionState.signalQrImage}
-            accent="sky"
-            description={connectionState.signalApiAvailable ? 'Öffne Signal > Verknüpfte Geräte.' : 'Signal API nicht verfügbar. Container prüfen.'}
-            extra={connectionState.signalNumber || undefined}
           />
         </section>
       </main>

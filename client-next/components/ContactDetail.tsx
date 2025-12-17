@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { Activity, Clock, Download, Gauge, MessageCircle, Monitor, Pencil, Radio, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import { Activity, Clock, Download, Gauge, MessageCircle, Monitor, Pencil, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { ContactInfo, ProbeMethod } from '@/lib/types';
 import { HistoryChart } from './HistoryChart';
 
@@ -35,8 +35,6 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
   const samples = contact.data.length;
   const lastUpdateLabel = contact.updatedAt ? timeAgo(contact.updatedAt) : '—';
 
-  const PlatformIcon = contact.platform === 'signal' ? Radio : MessageCircle;
-
   const exportCsv = useCallback(() => {
     if (!contact.data.length) return;
     const header = 'timestamp_iso,timestamp,rtt,avg,median,threshold,state\n';
@@ -56,9 +54,9 @@ export function ContactDetail({ contact, onRemove, onRefresh, loading, probeMeth
         <div className="flex items-center gap-4">
           <div className={clsx(
             'h-14 w-14 rounded-2xl flex items-center justify-center text-white shadow-lift',
-            contact.platform === 'signal' ? 'bg-gradient-to-br from-sky-400 to-blue-600' : 'bg-gradient-to-br from-emerald-400 to-green-600'
+            'bg-gradient-to-br from-emerald-400 to-green-600'
           )}>
-            <PlatformIcon size={20} />
+            <MessageCircle size={20} />
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Aktiver Nutzer</p>

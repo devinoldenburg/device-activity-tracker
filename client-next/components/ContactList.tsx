@@ -1,8 +1,8 @@
 "use client";
 
-import { ContactInfo, Platform } from '@/lib/types';
+import { ContactInfo } from '@/lib/types';
 import clsx from 'clsx';
-import { MessageCircle, Phone, Radio } from 'lucide-react';
+import { MessageCircle, Phone } from 'lucide-react';
 
 interface ContactListProps {
   contacts: ContactInfo[];
@@ -15,7 +15,6 @@ export function ContactList({ contacts, selectedJid, onSelect }: ContactListProp
     <div className="h-full overflow-y-auto pr-2 space-y-2 scrollbar-thin">
       {contacts.map((contact) => {
         const online = contact.devices.some(d => (d.state || '').includes('Online'));
-        const PlatformIcon = contact.platform === 'signal' ? Radio : MessageCircle;
         const number = contact.displayNumber;
         return (
           <button
@@ -30,9 +29,9 @@ export function ContactList({ contacts, selectedJid, onSelect }: ContactListProp
           >
             <div className={clsx(
               'h-10 w-10 rounded-xl flex items-center justify-center text-white shadow-lift',
-              contact.platform === 'signal' ? 'bg-gradient-to-br from-sky-400 to-blue-600' : 'bg-gradient-to-br from-emerald-400 to-green-600'
+              'bg-gradient-to-br from-emerald-400 to-green-600'
             )}>
-              <PlatformIcon size={18} />
+              <MessageCircle size={18} />
             </div>
             <div className="flex-1">
               <p className={clsx('text-sm font-semibold', selectedJid === contact.jid ? 'text-white' : 'text-slate-900')}>{number}</p>

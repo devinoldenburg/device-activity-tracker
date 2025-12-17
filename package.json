@@ -6,7 +6,6 @@
   "main": "dist/index.js",
   "keywords": [
     "whatsapp",
-    "signal",
     "privacy",
     "security",
     "research",
@@ -28,9 +27,8 @@
   "scripts": {
     "build": "tsc",
     "start": "npx tsx src/index.ts",
-    "start:server": "npm run start:signal-api && npx tsx src/server.ts",
+    "start:server": "npx tsx src/server.ts",
     "start:backend": "npx tsx src/server.ts",
-    "start:signal-api": "npx tsx src/scripts/init-signal.ts",
     "start:client": "cd client-next && npm run dev",
     "dev": "npm run start:server",
     "start:all": "concurrently -k -n server,client -c green,blue \"npm run start:server\" \"npm run start:client\"",

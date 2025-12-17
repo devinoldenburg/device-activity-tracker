@@ -1,11 +1,7 @@
-export type Platform = 'whatsapp' | 'signal';
+export type Platform = 'whatsapp';
 
 export interface ConnectionState {
   whatsapp: boolean;
-  signal: boolean;
-  signalNumber: string | null;
-  signalApiAvailable: boolean;
-  signalQrImage: string | null;
   whatsappQr: string | null;
 }
 

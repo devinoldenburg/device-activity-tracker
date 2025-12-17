@@ -1,7 +1,7 @@
 import { createPool, Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { PingEvent } from './ping-events.js';
 
-type Platform = 'whatsapp' | 'signal';
+type Platform = 'whatsapp';
 
 export interface ContactRecord {
     contactKey: string;
@@ -216,8 +216,12 @@ export class ActivityStore {
         return rows as ContactRecord[];
     }
 
-    public async countPings(): Promise<number> {
+    public async countPings(userId?: number): Promise<number> {
         await this.ensureReady();
+        if (typeof userId === 'number') {
+            const [rows] = await this.pool.query<RowDataPacket[]>('SELECT COUNT(*) as cnt FROM pings WHERE user_id = ?', [userId]);
+            return Number(rows[0]?.cnt || 0);
+        }
         const [rows] = await this.pool.query<RowDataPacket[]>('SELECT COUNT(*) as cnt FROM pings');
         return Number(rows[0]?.cnt || 0);
     }

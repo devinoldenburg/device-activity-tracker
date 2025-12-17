@@ -12,18 +12,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql-data:/var/lib/mysql
-
-  signal-api:
-    image: bbernhard/signal-cli-rest-api:latest
-    container_name: signal-api
-    restart: unless-stopped
-    ports:
-      - "8082:8080"
-    volumes:
-      - signal-data:/home/.local/share/signal-cli
-    environment:
-      - MODE=json-rpc
+      - ./data/mysql:/var/lib/mysql
 
   server:
     build:
@@ -33,10 +22,7 @@ services:
     restart: unless-stopped
     depends_on:
       - mysql
-      - signal-api
     environment:
-      - SIGNAL_API_URL=http://signal-api:8080
-      - SIGNAL_API_PUBLIC_URL=http://localhost:8082
       - AUTH_DIR=/app/auth_info_baileys
       - COOKIE_SECURE=false
       - JWT_SECRET=please-change-me-to-a-long-secret-32chars-min
@@ -46,7 +32,7 @@ services:
       - MYSQL_PASSWORD=tracker
       - MYSQL_DATABASE=tracker
     volumes:
-      - wa-auth:/app/auth_info_baileys
+      - ./data/wa-auth:/app/auth_info_baileys
     ports:
       - "3005:3001"
 
@@ -64,8 +50,3 @@ services:
       - NEXT_PUBLIC_SOCKET_URL=http://localhost:3005
     ports:
       - "3002:3002"
-
-volumes:
-  signal-data:
-  wa-auth:
-  mysql-data:

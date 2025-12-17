@@ -1,7 +1,7 @@
 "use client";
 
 import './globals.css';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { SideNav } from '@/components/SideNav';
 import { TrackerProvider } from '@/components/TrackerProvider';
@@ -10,6 +10,22 @@ import { AuthGate } from '@/components/AuthGate';
 
 function AppShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+
+  // Suppress React 19 dev warning from Recharts defaultProps until upstream fixes
+  useEffect(() => {
+    const originalError = console.error;
+    console.error = (...args: any[]) => {
+      const first = args[0];
+      if (typeof first === 'string' && first.includes('Support for defaultProps will be removed from function components')) {
+        return;
+      }
+      originalError(...args);
+    };
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <SideNav />

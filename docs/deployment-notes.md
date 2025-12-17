@@ -8,7 +8,7 @@ Running this software is discouraged. If you still choose to do so for controlle
 
 ## Environment
 - Prefer isolated lab networks; do not run on shared or production networks.
-- Protect volumes (`sqlite-data`, `wa-auth`, `signal-data`) and the SQLite database; they contain presence and auth material.
+- Protect volumes (`mysql-data`, `wa-auth`) and the database; they contain presence and auth material.
 - Rotate and revoke credentials after tests; clear volumes when done.
 
 ## Operation

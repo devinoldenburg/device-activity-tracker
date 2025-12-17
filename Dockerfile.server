@@ -13,6 +13,5 @@ COPY src ./src
 RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
-ENV SIGNAL_API_URL=http://signal-api:8080
 EXPOSE 3001
 CMD ["npm", "run", "start:backend"]

@@ -39,21 +39,18 @@ export function useTrackerData(enabled: boolean = true) {
   const [probeMethod, setProbeMethod] = useState<ProbeMethod>('delete');
   const [error, setError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
-  const [platformEnabled, setPlatformEnabled] = useState<{ whatsapp: boolean; signal: boolean }>(() => {
-    if (typeof window === 'undefined') return { whatsapp: true, signal: true };
+  const [platformEnabled, setPlatformEnabled] = useState<{ whatsapp: boolean }>(() => {
+    if (typeof window === 'undefined') return { whatsapp: true };
     try {
       const stored = localStorage.getItem('platformEnabled');
       if (stored) {
         const parsed = JSON.parse(stored);
-        return {
-          whatsapp: parsed.whatsapp !== false,
-          signal: parsed.signal !== false
-        };
+        return { whatsapp: parsed.whatsapp !== false };
       }
     } catch {
       /* ignore */
     }
-    return { whatsapp: true, signal: true };
+    return { whatsapp: true };
   });
 
   const initialAliases = useMemo(() => {
@@ -138,8 +135,6 @@ export function useTrackerData(enabled: boolean = true) {
     function onDisconnect() {
       setConnected(false);
       setConnectionState(initialConnectionState);
-      setContacts(new Map());
-      setSelectedJid(null);
     }
 
     function onWhatsAppConnectionOpen() {
@@ -147,28 +142,14 @@ export function useTrackerData(enabled: boolean = true) {
       console.info('[WS] WhatsApp connected');
     }
 
+    function onWhatsAppConnectionClose() {
+      setConnectionState(prev => ({ ...prev, whatsapp: false, whatsappQr: null }));
+      console.info('[WS] WhatsApp connection closed');
+    }
+
     function onWhatsAppQr(qr: string) {
       setConnectionState(prev => ({ ...prev, whatsappQr: qr }));
       console.info('[WS] WhatsApp QR received');
-    }
-
-    function onSignalConnectionOpen(data: { number: string }) {
-      setConnectionState(prev => ({ ...prev, signal: true, signalNumber: data.number }));
-      console.info('[WS] Signal connected', data.number);
-    }
-
-    function onSignalDisconnected() {
-      setConnectionState(prev => ({ ...prev, signal: false, signalNumber: null }));
-      console.warn('[WS] Signal disconnected');
-    }
-
-    function onSignalApiStatus(data: { available: boolean }) {
-      setConnectionState(prev => ({ ...prev, signalApiAvailable: data.available }));
-    }
-
-    function onSignalQrImage(url: string) {
-      setConnectionState(prev => ({ ...prev, signalQrImage: url }));
-      console.info('[WS] Signal QR URL', url);
     }
 
     function onTrackerUpdate(update: any) {
@@ -262,6 +243,10 @@ export function useTrackerData(enabled: boolean = true) {
     function onError(data: { message: string }) {
       setError(data.message);
       console.error('[WS] Error', data);
+      const msg = (data.message || '').toLowerCase();
+      if (msg.includes('ersetzt') || msg.includes('konflikt')) {
+        setConnectionState(prev => ({ ...prev, whatsapp: false, whatsappQr: null }));
+      }
       setTimeout(() => setError(null), 2500);
     }
 
@@ -274,7 +259,7 @@ export function useTrackerData(enabled: boolean = true) {
         const next = new Map(prev);
         contactsList.forEach(({ id, platform, number }) => {
           if (next.has(id)) return;
-          const base = platform === 'signal' ? (id.replace('signal:', '') || number || id) : (id.split('@')[0] || id);
+          const base = id.split('@')[0] || number || id;
           const alias = aliasMapRef.current[id];
           next.set(id, {
             jid: id,
@@ -297,11 +282,8 @@ export function useTrackerData(enabled: boolean = true) {
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('connection-open', onWhatsAppConnectionOpen);
+    socket.on('connection-close', onWhatsAppConnectionClose);
     socket.on('qr', onWhatsAppQr);
-    socket.on('signal-connection-open', onSignalConnectionOpen);
-    socket.on('signal-disconnected', onSignalDisconnected);
-    socket.on('signal-api-status', onSignalApiStatus);
-    socket.on('signal-qr-image', onSignalQrImage);
     socket.on('tracker-update', onTrackerUpdate);
     socket.on('profile-pic', onProfilePic);
     socket.on('contact-name', onContactName);
@@ -318,11 +300,8 @@ export function useTrackerData(enabled: boolean = true) {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('connection-open', onWhatsAppConnectionOpen);
+      socket.off('connection-close', onWhatsAppConnectionClose);
       socket.off('qr', onWhatsAppQr);
-      socket.off('signal-connection-open', onSignalConnectionOpen);
-      socket.off('signal-disconnected', onSignalDisconnected);
-      socket.off('signal-api-status', onSignalApiStatus);
-      socket.off('signal-qr-image', onSignalQrImage);
       socket.off('tracker-update', onTrackerUpdate);
       socket.off('profile-pic', onProfilePic);
       socket.off('contact-name', onContactName);
@@ -361,17 +340,16 @@ export function useTrackerData(enabled: boolean = true) {
     });
   }, [persistAlias]);
 
-  const addContact = useCallback((number: string, platform: Platform, alias?: string) => {
+  const addContact = useCallback((number: string, _platform: Platform = 'whatsapp', alias?: string) => {
     const cleanNumber = number.replace(/\D/g, '');
-    const enabled = platformEnabled[platform];
-    if (!enabled) {
-      setError(`${platform === 'whatsapp' ? 'WhatsApp' : 'Signal'} ist deaktiviert`);
+    if (!platformEnabled.whatsapp) {
+      setError('WhatsApp ist deaktiviert');
       setTimeout(() => setError(null), 2500);
       return;
     }
-    if (alias) persistAlias(`${platform}:${cleanNumber}`, alias);
-    socket.emit('add-contact', { number: cleanNumber, platform, alias: alias || undefined });
-  }, [socket, persistAlias, platformEnabled]);
+    if (alias) persistAlias(`whatsapp:${cleanNumber}`, alias);
+    socket.emit('add-contact', { number: cleanNumber, platform: 'whatsapp', alias: alias || undefined });
+  }, [socket, persistAlias, platformEnabled.whatsapp]);
 
   const removeContact = useCallback((jid: string) => {
     socket.emit('remove-contact', jid);
@@ -394,7 +372,7 @@ export function useTrackerData(enabled: boolean = true) {
       /* ignore */
     }
     aliasMapRef.current = {};
-    setPlatformEnabled({ whatsapp: true, signal: true });
+    setPlatformEnabled({ whatsapp: true });
     setContacts(new Map());
     setSelectedJid(null);
   }, []);
@@ -430,9 +408,9 @@ export function useTrackerData(enabled: boolean = true) {
     probeMethod,
     setProbeMethod: changeProbeMethod,
     platformEnabled,
-    setPlatformEnabled: (platform: Platform, enabled: boolean) => {
+    setPlatformEnabled: (_platform: Platform, enabled: boolean) => {
       setPlatformEnabled((prev) => {
-        const next = { ...prev, [platform]: enabled } as typeof prev;
+        const next = { ...prev, whatsapp: enabled } as typeof prev;
         try {
           localStorage.setItem('platformEnabled', JSON.stringify(next));
         } catch {

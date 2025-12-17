@@ -11,7 +11,6 @@ export default function SettingsPage() {
   const { connectionState, connected, probeMethod, setProbeMethod, platformEnabled, setPlatformEnabled, resetUserData, clearLocalPreferences } = useTracker();
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [waMessage, setWaMessage] = useState<string | null>(null);
-  const [sigMessage, setSigMessage] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-white via-slate-50 to-slate-100">
@@ -42,9 +41,9 @@ export default function SettingsPage() {
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white shadow-lift p-6 space-y-3">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Plattformen</p>
-          <h2 className="text-2xl font-bold text-slate-900">WhatsApp und Signal entkoppeln</h2>
-          <p className="text-sm text-slate-600">Schalte jede Plattform separat frei. Deaktivierte Plattformen werden weder hinzugefügt noch angezeigt.</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Plattform</p>
+          <h2 className="text-2xl font-bold text-slate-900">WhatsApp steuern</h2>
+          <p className="text-sm text-slate-600">Nur WhatsApp wird unterstützt. Deaktiviert blendet Kontakte aus und verhindert neue Verknüpfungen.</p>
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => setPlatformEnabled('whatsapp', !platformEnabled.whatsapp)}
@@ -53,16 +52,10 @@ export default function SettingsPage() {
               WhatsApp {platformEnabled.whatsapp ? 'aktiv' : 'aus'}
             </button>
             <button
-              onClick={() => setPlatformEnabled('signal', !platformEnabled.signal)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold border ${platformEnabled.signal ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}
-            >
-              Signal {platformEnabled.signal ? 'aktiv' : 'aus'}
-            </button>
-            <button
-              onClick={() => { setPlatformEnabled('whatsapp', false); setPlatformEnabled('signal', false); }}
+              onClick={() => { setPlatformEnabled('whatsapp', false); }}
               className="px-4 py-2 rounded-xl text-sm font-semibold border bg-white text-slate-700 border-slate-200 inline-flex items-center gap-2"
             >
-              <Power size={14} /> Beide aus
+              <Power size={14} /> WhatsApp aus
             </button>
             <button
               onClick={async () => {
@@ -79,23 +72,7 @@ export default function SettingsPage() {
             >
               <PlugZap size={14} /> WhatsApp trennen
             </button>
-            <button
-              onClick={async () => {
-                setSigMessage('Trenne Signal...');
-                try {
-                  const res = await fetch(`${API_BASE}/api/signal/disconnect`, { method: 'POST', credentials: 'include' });
-                  setSigMessage(res.ok ? 'Signal getrennt. Bitte neu koppeln.' : 'Trennen fehlgeschlagen');
-                } catch {
-                  setSigMessage('Trennen fehlgeschlagen');
-                }
-                setTimeout(() => setSigMessage(null), 3000);
-              }}
-              className="px-4 py-2 rounded-xl text-sm font-semibold border bg-white text-slate-700 border-slate-200 inline-flex items-center gap-2"
-            >
-              <PlugZap size={14} /> Signal trennen
-            </button>
             {waMessage && <span className="text-sm text-slate-600">{waMessage}</span>}
-            {sigMessage && <span className="text-sm text-slate-600">{sigMessage}</span>}
           </div>
         </div>
 
@@ -124,11 +101,6 @@ export default function SettingsPage() {
               <SlidersHorizontal size={14} /> Lokale Einstellungen löschen
             </button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <StatCard title="Datenschutz" value="Aliasing & Blur" hint="Aliase werden lokal gespeichert" accent="amber" icon={<Shield size={18} />} />
-          <StatCard title="Probes" value="Sub-Second" hint="Schnellere Polls aktiv" accent="blue" icon={<Zap size={18} />} />
         </div>
       </main>
     </div>

@@ -18,12 +18,9 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeys
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { SignalTracker, getSignalAccounts, checkSignalNumber } from './signal-tracker.js';
 import { activityStore } from './storage.js';
 
 // Configuration
-const SIGNAL_API_URL = process.env.SIGNAL_API_URL || 'http://localhost:8080';
-const SIGNAL_API_PUBLIC_URL = process.env.SIGNAL_API_PUBLIC_URL || SIGNAL_API_URL;
 const AUTH_DIR = process.env.AUTH_DIR || path.join(process.cwd(), 'auth_info_baileys');
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOW_REGISTRATION = (process.env.ALLOW_REGISTRATION || '').toLowerCase() === 'true';
@@ -205,7 +202,20 @@ app.post('/api/whatsapp/disconnect', requireAuth, asyncHandler(async (req, res) 
     const ctx = (req as any).auth as AuthContext;
     try {
         const session = whatsappSessions.get(ctx.userId);
-        if (session?.sock) {
+        if (!session) {
+            // No active session; still clear auth dir to be idempotent
+            try {
+                fs.rmSync(userAuthDir(ctx.userId), { recursive: true, force: true });
+                fs.mkdirSync(userAuthDir(ctx.userId), { recursive: true });
+            } catch (e) {
+                console.error('[WHATSAPP] Disconnect fs cleanup (no session) failed', e);
+            }
+            io.to(`user:${ctx.userId}`).emit('qr', null);
+            io.to(`user:${ctx.userId}`).emit('connection-close');
+            return res.json({ ok: true, message: 'No active session' });
+        }
+
+        if (session.sock) {
             try {
                 await session.sock.logout();
             } catch {
@@ -215,18 +225,22 @@ app.post('/api/whatsapp/disconnect', requireAuth, asyncHandler(async (req, res) 
             session.sock = null;
         }
 
-        session && (session.isConnected = false, session.currentQr = null, session.restored = false);
+        if (session) {
+            session.isConnected = false;
+            session.currentQr = null;
+            session.restored = false;
+        }
         stopPlatformTrackers(ctx.userId, 'whatsapp');
 
         try {
-            fs.rmSync(session?.authDir || userAuthDir(ctx.userId), { recursive: true, force: true });
+            fs.rmSync(session.authDir || userAuthDir(ctx.userId), { recursive: true, force: true });
             fs.mkdirSync(userAuthDir(ctx.userId), { recursive: true });
         } catch {
             /* ignore file cleanup errors */
         }
 
         io.to(`user:${ctx.userId}`).emit('qr', null);
-        io.to(`user:${ctx.userId}`).emit('connection-open');
+        io.to(`user:${ctx.userId}`).emit('connection-close');
         await ensureWhatsAppSession(ctx.userId);
         res.json({ ok: true });
     } catch (err) {
@@ -235,22 +249,20 @@ app.post('/api/whatsapp/disconnect', requireAuth, asyncHandler(async (req, res) 
     }
 }));
 
-app.post('/api/signal/disconnect', requireAuth, asyncHandler(async (_req, res) => {
-    try {
-        stopAllSignalTrackers();
-        isSignalConnected = false;
-        signalAccountNumber = null;
-        signalLinkingInProgress = false;
-        restoredSignal = false;
-        currentSignalQrUrl = null;
-        io.emit('signal-disconnected');
-        io.emit('signal-qr-image', null);
-        await checkSignalConnection();
-        res.json({ ok: true });
-    } catch (err) {
-        console.error('[SIGNAL] Disconnect failed', err);
-        res.status(500).json({ message: 'Signal-Disconnect fehlgeschlagen' });
+// Explicitly trigger a fresh WhatsApp connect (clears conflict block and starts QR)
+app.post('/api/whatsapp/connect', requireAuth, asyncHandler(async (req, res) => {
+    const ctx = (req as any).auth as AuthContext;
+    let session = whatsappSessions.get(ctx.userId);
+    if (!session) {
+        session = { sock: null, isConnected: false, currentQr: null, restored: false, authDir: userAuthDir(ctx.userId) };
+        whatsappSessions.set(ctx.userId, session);
     }
+    session.blockedOnConflict = false;
+    session.conflictCount = 0;
+    session.lastConflictAt = undefined;
+    session.currentQr = null;
+    await ensureWhatsAppSession(ctx.userId);
+    res.json({ ok: true });
 }));
 
 // Admin endpoints
@@ -312,19 +324,20 @@ interface WhatsAppSession {
     restored: boolean;
     authDir: string;
     connectPromise?: Promise<void>;
+    reconnectTimeout?: NodeJS.Timeout;
+    conflictCount?: number;
+    lastConflictAt?: number;
+    blockedOnConflict?: boolean;
 }
 
 const whatsappSessions: Map<number, WhatsAppSession> = new Map();
-let isSignalConnected = false;
-let signalAccountNumber: string | null = null;
 let globalProbeMethod: ProbeMethod = 'delete'; // Default to delete method
-let restoredSignal = false;
 
 // Platform type for contacts
-type Platform = 'whatsapp' | 'signal';
+type Platform = 'whatsapp';
 
 interface TrackerEntry {
-    tracker: WhatsAppTracker | SignalTracker;
+    tracker: WhatsAppTracker;
     platform: Platform;
     number: string;
     contactKey: string;
@@ -469,15 +482,6 @@ function stopUserTrackers(userId: number) {
     }
 }
 
-function stopAllSignalTrackers() {
-    for (const [key, entry] of trackers.entries()) {
-        if (entry.platform === 'signal') {
-            entry.tracker.stopTracking();
-            trackers.delete(key);
-        }
-    }
-}
-
 function stopPlatformTrackers(userId: number, platform: Platform) {
     for (const [key, entry] of trackers.entries()) {
         if (entry.userId === userId && entry.platform === platform) {
@@ -493,8 +497,34 @@ function userAuthDir(userId: number) {
     return dir;
 }
 
+function resetWhatsAppAuth(userId: number, session: WhatsAppSession, clearConflictBlock = false) {
+    try {
+        fs.rmSync(session.authDir, { recursive: true, force: true });
+    } catch {
+        /* ignore fs errors */
+    }
+    fs.mkdirSync(session.authDir, { recursive: true });
+    session.sock = null;
+    session.isConnected = false;
+    session.currentQr = null;
+    session.restored = false;
+    if (clearConflictBlock) {
+        session.blockedOnConflict = false;
+    }
+    if (session.reconnectTimeout) {
+        clearTimeout(session.reconnectTimeout);
+        session.reconnectTimeout = undefined;
+    }
+    stopPlatformTrackers(userId, 'whatsapp');
+}
+
 async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
     let session = whatsappSessions.get(userId);
+    if (session?.blockedOnConflict) {
+        notifySocket?.emit('error', { message: 'WhatsApp-Sitzung blockiert wegen Konflikt. Bitte QR neu scannen.' });
+        notifySocket?.emit('qr', null);
+        return;
+    }
     if (session?.connectPromise) return session.connectPromise;
 
     const authDir = session?.authDir || userAuthDir(userId);
@@ -513,6 +543,15 @@ async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
             logger: pino({ level: 'debug' }),
             markOnlineOnConnect: true,
             printQRInTerminal: false,
+            shouldReconnect: (lastDisconnect) => {
+                const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+                const payload = (lastDisconnect?.error as Boom)?.output?.payload as any;
+                const messageText = payload?.message?.toString().toLowerCase() || '';
+                const isConflict = messageText.includes('conflict');
+                const isConnectionClosed = messageText.includes('connection closed');
+                const allow = statusCode !== DisconnectReason.loggedOut && !isConflict && !isConnectionClosed;
+                return allow;
+            },
         });
 
         session!.sock = sock;
@@ -529,13 +568,56 @@ async function ensureWhatsAppSession(userId: number, notifySocket?: any) {
             if (connection === 'close') {
                 session!.isConnected = false;
                 session!.currentQr = null;
-                const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+                const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+                const payload = (lastDisconnect?.error as Boom)?.output?.payload as any;
+                const messageText = payload?.message?.toString().toLowerCase() || '';
+                const isConflict = messageText.includes('conflict');
+                const isConnectionClosed = messageText.includes('connection closed');
+                const now = Date.now();
+                if (isConflict) {
+                    session!.conflictCount = (session!.conflictCount || 0) + 1;
+                    session!.lastConflictAt = now;
+                    session!.blockedOnConflict = true;
+                    try { session!.sock?.ws?.close(); } catch { /* ignore */ }
+                    try { session!.sock?.end?.(); } catch { /* ignore */ }
+                    try { session!.sock?.ev?.removeAllListeners(); } catch { /* ignore */ }
+                    session!.sock = null;
+                }
+                const shouldResetAuth = statusCode === DisconnectReason.loggedOut || isConflict || isConnectionClosed;
+                if (shouldResetAuth) {
+                    resetWhatsAppAuth(userId, session!, !isConflict);
+                    session!.sock = undefined;
+                    session!.restored = false;
+                }
+                io.to(`user:${userId}`).emit('connection-close');
+                notifySocket?.emit('connection-close');
+                const tooManyConflicts = (session!.conflictCount || 0) >= 3 && session!.lastConflictAt && (now - session!.lastConflictAt) < 2 * 60 * 1000;
+
+                // If conflict occurred, force manual re-pair: emit QR null and do NOT auto-reconnect to avoid flapping
+                if (isConflict) {
+                    notifySocket?.emit('error', { message: 'WhatsApp-Sitzung wurde ersetzt. Bitte QR erneut scannen.' });
+                    io.to(`user:${userId}`).emit('qr', null);
+                    return;
+                }
+
+                const shouldReconnect = !tooManyConflicts && (shouldResetAuth || statusCode !== DisconnectReason.loggedOut);
                 if (shouldReconnect) {
-                    void ensureWhatsAppSession(userId);
+                    const delayMs = isConnectionClosed ? 5000 : 1000;
+                    if (session!.reconnectTimeout) clearTimeout(session!.reconnectTimeout);
+                    session!.reconnectTimeout = setTimeout(() => {
+                        session!.reconnectTimeout = undefined;
+                        void ensureWhatsAppSession(userId);
+                    }, delayMs);
+                } else if (tooManyConflicts) {
+                    notifySocket?.emit('error', { message: 'Zu viele Verbindungs-Konflikte. Bitte QR erneut scannen.' });
+                    io.to(`user:${userId}`).emit('qr', null);
                 }
             } else if (connection === 'open') {
                 session!.isConnected = true;
                 session!.currentQr = null;
+                session!.conflictCount = 0;
+                session!.lastConflictAt = undefined;
+                session!.blockedOnConflict = false;
                 io.to(`user:${userId}`).emit('connection-open');
                 notifySocket?.emit('connection-open');
                 if (!session!.restored) {
@@ -640,227 +722,15 @@ async function startWhatsAppTracking(cleanNumber: string, userId: number, notify
     }
 }
 
-async function startSignalTracking(cleanNumber: string, userId: number, notifySocket?: any) {
-    if (!isSignalConnected || !signalAccountNumber) {
-        notifySocket?.emit('error', { message: 'Signal is not connected. Please link Signal first.' });
-        return;
-    }
-
-    const signalId = `signal:${cleanNumber}`;
-    const key = trackerKey(userId, signalId);
-    if (trackers.has(key)) {
-        notifySocket?.emit('error', { jid: signalId, message: 'Already tracking this contact on Signal' });
-        return;
-    }
-
-    try {
-        const targetNumber = ensurePlusPrefix(cleanNumber);
-        const checkResult = await checkSignalNumber(SIGNAL_API_URL, signalAccountNumber, targetNumber);
-
-        if (!checkResult.registered) {
-            notifySocket?.emit('error', {
-                jid: signalId,
-                message: checkResult.error || 'Number is not registered on Signal'
-            });
-            return;
-        }
-
-        const tracker = new SignalTracker(SIGNAL_API_URL, signalAccountNumber, targetNumber);
-        trackers.set(key, { tracker, platform: 'signal', number: targetNumber, contactKey: signalId, userId });
-        await activityStore.upsertContact(signalId, 'signal', targetNumber, userId);
-
-        tracker.onPing = (ping) => {
-            void activityStore.recordPing({
-                ...ping,
-                platform: 'signal',
-                userId,
-            }).catch((err) => console.error('[DB] Failed to record Signal ping', err));
-        };
-
-        tracker.onUpdate = (updateData) => {
-            io.to(`user:${userId}`).emit('tracker-update', {
-                jid: signalId,
-                platform: 'signal',
-                ...updateData
-            });
-        };
-
-        tracker.startTracking();
-
-        if (notifySocket) {
-            notifySocket.emit('contact-added', {
-                jid: signalId,
-                number: cleanNumber,
-                platform: 'signal'
-            });
-        }
-
-        io.to(`user:${userId}`).emit('contact-name', { jid: signalId, name: cleanNumber });
-    } catch (err) {
-        console.error(err);
-        notifySocket?.emit('error', { message: 'Failed to start Signal tracking' });
-    }
-}
-
 async function restoreUserContacts(userId: number, platform: Platform) {
     const contacts = (await activityStore.listContacts(userId)).filter((c) => c.platform === platform);
 
     for (const contact of contacts) {
         const clean = normalizeNumber(contact.number);
         if (!clean) continue;
-        if (platform === 'whatsapp') {
-            await startWhatsAppTracking(clean, userId);
-        } else {
-            await startSignalTracking(clean, userId);
-        }
+        await startWhatsAppTracking(clean, userId);
     }
 }
-
-async function restorePersistedContacts(platform: Platform) {
-    const contacts = (await activityStore.listAllContacts()).filter((c) => c.platform === platform);
-
-    for (const contact of contacts) {
-        const clean = normalizeNumber(contact.number);
-        if (!clean) continue;
-        if (platform === 'whatsapp') {
-            await startWhatsAppTracking(clean, contact.userId);
-        } else {
-            await startSignalTracking(clean, contact.userId);
-        }
-    }
-}
-
-// Signal linking state
-let signalLinkingInProgress = false;
-let signalApiAvailable = false;
-let currentSignalQrUrl: string | null = null;
-
-// Check Signal API availability
-async function checkSignalApiAvailable(): Promise<boolean> {
-    try {
-        const response = await fetch(`${SIGNAL_API_URL}/v1/about`, {
-            signal: AbortSignal.timeout(2000)
-        });
-        return response.ok;
-    } catch {
-        return false;
-    }
-}
-
-// Check Signal connection status
-async function checkSignalConnection() {
-    try {
-        const available = await checkSignalApiAvailable();
-        if (available !== signalApiAvailable) {
-            signalApiAvailable = available;
-            console.log(`[SIGNAL] API available: ${available}`);
-            io.emit('signal-api-status', { available });
-        }
-
-        if (!available) {
-            if (isSignalConnected) {
-                isSignalConnected = false;
-                signalAccountNumber = null;
-                io.emit('signal-disconnected');
-            }
-            return;
-        }
-
-        const accounts = await getSignalAccounts(SIGNAL_API_URL);
-        if (accounts.length > 0) {
-            if (!isSignalConnected) {
-                isSignalConnected = true;
-                signalAccountNumber = accounts[0];
-                signalLinkingInProgress = false;
-                console.log(`[SIGNAL] Connected with account: ${signalAccountNumber}`);
-                io.emit('signal-connection-open', { number: signalAccountNumber });
-                if (!restoredSignal) {
-                    restoredSignal = true;
-                    void restorePersistedContacts('signal');
-                }
-            }
-        } else {
-            if (isSignalConnected) {
-                isSignalConnected = false;
-                signalAccountNumber = null;
-                console.log('[SIGNAL] Disconnected');
-                io.emit('signal-disconnected');
-            }
-            // No accounts - need to link, start QR code process
-            if (!signalLinkingInProgress) {
-                startSignalLinking();
-            }
-        }
-    } catch (err) {
-        console.log('[SIGNAL] Error checking connection:', err);
-        if (isSignalConnected) {
-            isSignalConnected = false;
-            signalAccountNumber = null;
-            io.emit('signal-disconnected');
-        }
-    }
-}
-
-// Start Signal device linking - signal-cli-rest-api returns QR as PNG image
-async function startSignalLinking() {
-    if (signalLinkingInProgress || isSignalConnected) return;
-
-    signalLinkingInProgress = true;
-    console.log('[SIGNAL] Starting device linking...');
-
-    try {
-        // Check if the QR endpoint is available
-        const response = await fetch(`${SIGNAL_API_URL}/v1/qrcodelink?device_name=activity-tracker`);
-        if (!response.ok) {
-            console.log('[SIGNAL] Failed to start linking:', response.status);
-            signalLinkingInProgress = false;
-            return;
-        }
-
-        // signal-cli-rest-api returns the QR code as a PNG image directly
-        // Send the PUBLIC URL to the frontend so the browser can load it
-        currentSignalQrUrl = `${SIGNAL_API_PUBLIC_URL}/v1/qrcodelink?device_name=activity-tracker&t=${Date.now()}`;
-        console.log('[SIGNAL] Emitting QR image URL:', currentSignalQrUrl);
-        io.emit('signal-qr-image', currentSignalQrUrl);
-
-        // Keep polling to check if linking completed
-        pollSignalLinkingStatus();
-    } catch (err) {
-        console.log('[SIGNAL] Error starting linking:', err);
-        signalLinkingInProgress = false;
-    }
-}
-
-// Poll to check if Signal linking has completed
-async function pollSignalLinkingStatus() {
-    const checkInterval = setInterval(async () => {
-        try {
-            const accounts = await getSignalAccounts(SIGNAL_API_URL);
-            if (accounts.length > 0) {
-                // Linking completed!
-                clearInterval(checkInterval);
-                signalLinkingInProgress = false;
-                currentSignalQrUrl = null;
-                isSignalConnected = true;
-                signalAccountNumber = accounts[0];
-                console.log(`[SIGNAL] Linking completed! Account: ${signalAccountNumber}`);
-                io.emit('signal-connection-open', { number: signalAccountNumber });
-            }
-        } catch (err) {
-            // Keep polling
-        }
-    }, 2000);
-
-    // Stop polling after 5 minutes
-    setTimeout(() => {
-        clearInterval(checkInterval);
-        signalLinkingInProgress = false;
-    }, 300000);
-}
-
-// Check Signal connection periodically
-checkSignalConnection();
-setInterval(checkSignalConnection, 5000);
 io.use(async (socket, next) => {
     const cookieHeader = socket.handshake.headers.cookie as string | undefined;
     const cookies = parseCookies(cookieHeader);
@@ -895,18 +765,13 @@ io.on('connection', (socket) => {
         socket.emit('connection-open');
     }
 
-    void ensureWhatsAppSession(auth.userId, socket);
-
-    if (isSignalConnected && signalAccountNumber) {
-        socket.emit('signal-connection-open', { number: signalAccountNumber });
-    }
-
-    // Send Signal API availability status
-    socket.emit('signal-api-status', { available: signalApiAvailable });
-
-    // Send current Signal QR code if linking is in progress
-    if (signalLinkingInProgress && currentSignalQrUrl) {
-        socket.emit('signal-qr-image', currentSignalQrUrl);
+    // Only auto-start session if not conflict-blocked
+    const existingSession = whatsappSessions.get(auth.userId);
+    if (!existingSession?.blockedOnConflict) {
+        void ensureWhatsAppSession(auth.userId, socket);
+    } else {
+        socket.emit('qr', null);
+        socket.emit('error', { message: 'WhatsApp-Sitzung blockiert. Bitte QR neu scannen.' });
     }
 
     // Send current probe method to client
@@ -929,150 +794,86 @@ io.on('connection', (socket) => {
         socket.emit('tracked-contacts', tracked);
     });
 
-    // Add contact - supports both WhatsApp and Signal
+    // Add contact - WhatsApp only
     socket.on('add-contact', async (data: string | { number: string; platform: Platform }) => {
-        const { number, platform } = typeof data === 'string'
+        const { number } = typeof data === 'string'
             ? { number: data, platform: 'whatsapp' as Platform }
             : data;
 
-        console.log(`Request to track on ${platform}: ${number} by user ${auth.userId}`);
+        console.log(`Request to track on whatsapp: ${number} by user ${auth.userId}`);
         const cleanNumber = number.replace(/\D/g, '');
 
-        if (platform === 'signal') {
-            if (!isSignalConnected || !signalAccountNumber) {
-                socket.emit('error', { message: 'Signal is not connected. Please link Signal first.' });
-                return;
-            }
+        const targetJid = cleanNumber + '@s.whatsapp.net';
+        const key = trackerKey(auth.userId, targetJid);
 
-            const signalId = `signal:${cleanNumber}`;
-            const key = trackerKey(auth.userId, signalId);
-            if (trackers.has(key)) {
-                socket.emit('error', { jid: signalId, message: 'Already tracking this contact on Signal' });
-                return;
-            }
+        if (trackers.has(key)) {
+            socket.emit('error', { jid: targetJid, message: 'Already tracking this contact' });
+            return;
+        }
 
-            try {
-                const targetNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
-                console.log(`[SIGNAL] Checking if ${targetNumber} is registered...`);
-                const checkResult = await checkSignalNumber(SIGNAL_API_URL, signalAccountNumber, targetNumber);
+        const session = whatsappSessions.get(auth.userId);
+        if (!session || !session.sock || !session.isConnected) {
+            socket.emit('error', { message: 'WhatsApp noch nicht verbunden. Bitte koppeln.' });
+            void ensureWhatsAppSession(auth.userId, socket);
+            return;
+        }
 
-                if (!checkResult.registered) {
-                    console.log(`[SIGNAL] Number ${targetNumber} is not discoverable: ${checkResult.error}`);
-                    socket.emit('error', {
-                        jid: signalId,
-                        message: checkResult.error || 'Number is not registered on Signal'
-                    });
-                    return;
-                }
+        try {
+            const results = await session.sock.onWhatsApp(targetJid);
+            const result = results?.[0];
 
-                console.log(`[SIGNAL] Number ${targetNumber} is registered, starting tracking...`);
-                const tracker = new SignalTracker(SIGNAL_API_URL, signalAccountNumber, targetNumber);
-                const normalizedNumber = targetNumber;
-                trackers.set(key, { tracker, platform: 'signal', number: normalizedNumber, contactKey: signalId, userId: auth.userId });
-                await activityStore.upsertContact(signalId, 'signal', normalizedNumber, auth.userId);
+            if (result?.exists) {
+                const tracker = new WhatsAppTracker(session.sock, result.jid);
+                tracker.setProbeMethod(globalProbeMethod);
+                const contactKey = result.jid;
+                const normalizedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
+                trackers.set(key, { tracker, platform: 'whatsapp', number: normalizedNumber, contactKey, userId: auth.userId });
+                await activityStore.upsertContact(contactKey, 'whatsapp', normalizedNumber, auth.userId);
 
                 tracker.onPing = (ping) => {
                     void activityStore.recordPing({
                         ...ping,
-                        platform: 'signal',
+                        platform: 'whatsapp',
                         userId: auth.userId,
-                    }).catch((err) => console.error('[DB] Failed to record Signal ping', err));
+                    }).catch((err) => console.error('[DB] Failed to record WhatsApp ping', err));
                 };
 
                 tracker.onUpdate = (updateData) => {
                     io.to(`user:${auth.userId}`).emit('tracker-update', {
-                        jid: signalId,
-                        platform: 'signal',
+                        jid: result.jid,
+                        platform: 'whatsapp',
                         ...updateData
                     });
                 };
 
                 tracker.startTracking();
 
+                const ppUrl = await tracker.getProfilePicture();
+
+                let contactName = cleanNumber;
+                try {
+                    const contactInfo = await session.sock.onWhatsApp(result.jid);
+                    if (contactInfo && contactInfo[0]?.notify) {
+                        contactName = contactInfo[0].notify;
+                    }
+                } catch (err) {
+                    console.log('[NAME] Could not fetch contact name, using number');
+                }
+
                 socket.emit('contact-added', {
-                    jid: signalId,
+                    jid: result.jid,
                     number: cleanNumber,
-                    platform: 'signal'
+                    platform: 'whatsapp'
                 });
 
-                io.to(`user:${auth.userId}`).emit('contact-name', { jid: signalId, name: cleanNumber });
-            } catch (err) {
-                console.error(err);
-                socket.emit('error', { message: 'Failed to start Signal tracking' });
+                io.to(`user:${auth.userId}`).emit('profile-pic', { jid: result.jid, url: ppUrl });
+                io.to(`user:${auth.userId}`).emit('contact-name', { jid: result.jid, name: contactName });
+            } else {
+                socket.emit('error', { jid: targetJid, message: 'Number not on WhatsApp' });
             }
-        } else {
-            const targetJid = cleanNumber + '@s.whatsapp.net';
-            const key = trackerKey(auth.userId, targetJid);
-
-            if (trackers.has(key)) {
-                socket.emit('error', { jid: targetJid, message: 'Already tracking this contact' });
-                return;
-            }
-
-            const session = whatsappSessions.get(auth.userId);
-            if (!session || !session.sock || !session.isConnected) {
-                socket.emit('error', { message: 'WhatsApp noch nicht verbunden. Bitte koppeln.' });
-                void ensureWhatsAppSession(auth.userId, socket);
-                return;
-            }
-
-            try {
-                const results = await session.sock.onWhatsApp(targetJid);
-                const result = results?.[0];
-
-                if (result?.exists) {
-                    const tracker = new WhatsAppTracker(session.sock, result.jid);
-                    tracker.setProbeMethod(globalProbeMethod);
-                    const contactKey = result.jid;
-                    const normalizedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
-                    trackers.set(key, { tracker, platform: 'whatsapp', number: normalizedNumber, contactKey, userId: auth.userId });
-                    await activityStore.upsertContact(contactKey, 'whatsapp', normalizedNumber, auth.userId);
-
-                    tracker.onPing = (ping) => {
-                        void activityStore.recordPing({
-                            ...ping,
-                            platform: 'whatsapp',
-                            userId: auth.userId,
-                        }).catch((err) => console.error('[DB] Failed to record WhatsApp ping', err));
-                    };
-
-                    tracker.onUpdate = (updateData) => {
-                        io.to(`user:${auth.userId}`).emit('tracker-update', {
-                            jid: result.jid,
-                            platform: 'whatsapp',
-                            ...updateData
-                        });
-                    };
-
-                    tracker.startTracking();
-
-                    const ppUrl = await tracker.getProfilePicture();
-
-                    let contactName = cleanNumber;
-                    try {
-                        const contactInfo = await session.sock.onWhatsApp(result.jid);
-                        if (contactInfo && contactInfo[0]?.notify) {
-                            contactName = contactInfo[0].notify;
-                        }
-                    } catch (err) {
-                        console.log('[NAME] Could not fetch contact name, using number');
-                    }
-
-                    socket.emit('contact-added', {
-                        jid: result.jid,
-                        number: cleanNumber,
-                        platform: 'whatsapp'
-                    });
-
-                    io.to(`user:${auth.userId}`).emit('profile-pic', { jid: result.jid, url: ppUrl });
-                    io.to(`user:${auth.userId}`).emit('contact-name', { jid: result.jid, name: contactName });
-                } else {
-                    socket.emit('error', { jid: targetJid, message: 'Number not on WhatsApp' });
-                }
-            } catch (err) {
-                console.error(err);
-                socket.emit('error', { jid: targetJid, message: 'Verification failed' });
-            }
+        } catch (err) {
+            console.error(err);
+            socket.emit('error', { jid: targetJid, message: 'Verification failed' });
         }
     });
 
@@ -1107,7 +908,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// Historical data API
+// Historical data API (per-user scoped)
 app.get('/api/contacts', requireAuth, asyncHandler(async (req, res) => {
     const ctx = (req as any).auth as AuthContext;
     const contacts = await activityStore.listContacts(ctx.userId);
@@ -1124,8 +925,9 @@ app.get('/api/contacts/:contactKey/pings', requireAuth, asyncHandler(async (req,
     res.json(rows);
 }));
 
-app.get('/api/stats/metrics', requireAuth, asyncHandler(async (_req, res) => {
-    const total = await activityStore.countPings();
+app.get('/api/stats/metrics', requireAuth, asyncHandler(async (req, res) => {
+    const ctx = (req as any).auth as AuthContext;
+    const total = await activityStore.countPings(ctx.userId);
     res.json({ total });
 }));
 
